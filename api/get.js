@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       }
     }
     
-    // 2. 获取歌词 - 直接使用原始数据，不进行解码
+    // 2. 获取歌词 - 只使用LRC歌词，忽略YRC
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?${song.mid ? `mid=${song.mid}` : `id=${song.id}`}`;
     console.log('歌词URL:', lyricUrl);
     
@@ -67,25 +67,16 @@ export default async function handler(req, res) {
     let lyricType = 'none';
     
     if (lyricData && lyricData.code === 200 && lyricData.data) {
-      // 优先使用逐字歌词 (YRC)
-      if (lyricData.data.yrc) {
-        console.log("使用逐字歌词 (YRC)");
-        lyricType = 'yrc';
-        syncedLyrics = lyricData.data.yrc; // 直接使用原始数据
-        plainLyrics = ''; // 由于不解码，无法提取纯文本
-      } 
-      // 其次使用普通歌词 (LRC)
-      else if (lyricData.data.lyric) {
+      // 只使用普通歌词 (LRC)，忽略逐字歌词 (YRC)
+      if (lyricData.data.lyric) {
         console.log("使用普通歌词 (LRC)");
         lyricType = 'lrc';
         syncedLyrics = lyricData.data.lyric; // 直接使用原始数据
         plainLyrics = ''; // 由于不解码，无法提取纯文本
+        
+        console.log(`成功获取LRC歌词，长度:`, syncedLyrics.length);
       } else {
-        console.log("未找到歌词数据");
-      }
-      
-      if (syncedLyrics) {
-        console.log(`成功获取${lyricType.toUpperCase()}歌词，长度:`, syncedLyrics.length);
+        console.log("未找到LRC歌词数据");
       }
     } else {
       console.log('歌词API返回错误:', lyricData ? lyricData.msg : '未知错误');
@@ -101,13 +92,12 @@ export default async function handler(req, res) {
       plainLyrics: plainLyrics,
       syncedLyrics: syncedLyrics,
       source: 'QQ音乐',
-      lyricType: lyricType,
-      rawData: true // 标记这是原始数据
+      lyricType: lyricType
     };
     
     // 如果没有歌词，添加提示信息
     if (!syncedLyrics) {
-      response.message = '未找到歌词';
+      response.message = '未找到LRC歌词';
     }
     
     console.log('返回响应');
