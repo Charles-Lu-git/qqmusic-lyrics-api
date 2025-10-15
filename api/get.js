@@ -55,28 +55,33 @@ export default async function handler(req, res) {
       }
     }
     
-    // 2. 获取歌词 - 只使用LRC歌词，忽略YRC
+    // 2. 获取歌词 - 专门提取lrc字段
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?${song.mid ? `mid=${song.mid}` : `id=${song.id}`}`;
     console.log('歌词URL:', lyricUrl);
     
     const lyricResponse = await axios.get(lyricUrl);
     const lyricData = lyricResponse.data;
     
+    console.log('歌词API完整响应:', JSON.stringify(lyricData, null, 2));
+    
     let syncedLyrics = '';
     let plainLyrics = '';
     let lyricType = 'none';
     
     if (lyricData && lyricData.code === 200 && lyricData.data) {
-      // 只使用普通歌词 (LRC)，忽略逐字歌词 (YRC)
-      if (lyricData.data.lyric) {
-        console.log("使用普通歌词 (LRC)");
+      // 专门提取lrc字段
+      if (lyricData.data.lrc) {
+        console.log("找到LRC歌词字段");
         lyricType = 'lrc';
-        syncedLyrics = lyricData.data.lyric; // 直接使用原始数据
-        plainLyrics = ''; // 由于不解码，无法提取纯文本
+        syncedLyrics = lyricData.data.lrc; // 直接使用lrc字段的原始数据
         
-        console.log(`成功获取LRC歌词，长度:`, syncedLyrics.length);
+        console.log(`LRC歌词长度:`, syncedLyrics.length);
+        console.log(`LRC歌词预览:`, syncedLyrics.substring(0, 200));
+        
+        // 从LRC歌词中提取纯文本
+        plainLyrics = extractPlainLyrics(syncedLyrics);
       } else {
-        console.log("未找到LRC歌词数据");
+        console.log("未找到lrc字段，可用字段:", Object.keys(lyricData.data));
       }
     } else {
       console.log('歌词API返回错误:', lyricData ? lyricData.msg : '未知错误');
@@ -110,4 +115,24 @@ export default async function handler(req, res) {
       message: error.message
     });
   }
+}
+
+// 从LRC歌词中提取纯文本
+function extractPlainLyrics(lyricContent) {
+  if (!lyricContent) return '';
+  
+  // 移除LRC时间标签和其他标签
+  const plainText = lyricContent
+    .replace(/\[\d+:\d+\.\d+\]/g, '')  // 移除时间标签 [00:00.00]
+    .replace(/\[\d+:\d+\]/g, '')       // 移除简化时间标签 [00:00]
+    .replace(/\[ti:.*?\]/g, '')        // 移除标题标签
+    .replace(/\[ar:.*?\]/g, '')        // 移除艺术家标签
+    .replace(/\[al:.*?\]/g, '')        // 移除专辑标签
+    .replace(/\[by:.*?\]/g, '')        // 移除制作人标签
+    .replace(/\[offset:.*?\]/g, '')    // 移除偏移标签
+    .replace(/\[.*?\]/g, '')           // 移除其他所有标签
+    .replace(/\s+/g, ' ')              // 合并多个空格
+    .trim();
+  
+  return plainText;
 }
