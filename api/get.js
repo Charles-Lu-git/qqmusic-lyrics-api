@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       }
     }
     
-    // 2. 获取歌词 - 优先使用逐字歌词 (YRC)
+    // 2. 获取歌词 - 直接使用原始数据，不进行解码
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?${song.mid ? `mid=${song.mid}` : `id=${song.id}`}`;
     console.log('歌词URL:', lyricUrl);
     
@@ -67,51 +67,24 @@ export default async function handler(req, res) {
     let lyricType = 'none';
     
     if (lyricData && lyricData.code === 200 && lyricData.data) {
-      let lyricContent = '';
-      
       // 优先使用逐字歌词 (YRC)
       if (lyricData.data.yrc) {
         console.log("使用逐字歌词 (YRC)");
         lyricType = 'yrc';
-        lyricContent = lyricData.data.yrc;
-        
-        // 尝试 Base64 解码
-        try {
-          const decoded = Buffer.from(lyricContent, 'base64').toString('utf-8');
-          // 检查解码后的内容是否有效
-          if (decoded.includes('<') || decoded.includes('[') || decoded.length > 10) {
-            lyricContent = decoded;
-            console.log("YRC Base64 解码成功");
-          } else {
-            console.log("解码后的内容无效，使用原始内容");
-          }
-        } catch (e) {
-          console.log('YRC Base64 解码失败，使用原始内容');
-        }
+        syncedLyrics = lyricData.data.yrc; // 直接使用原始数据
+        plainLyrics = ''; // 由于不解码，无法提取纯文本
       } 
-      // 如果没有逐字歌词，尝试使用普通歌词 (LRC)
+      // 其次使用普通歌词 (LRC)
       else if (lyricData.data.lyric) {
         console.log("使用普通歌词 (LRC)");
         lyricType = 'lrc';
-        lyricContent = lyricData.data.lyric;
-        
-        // 尝试 Base64 解码
-        try {
-          const decoded = Buffer.from(lyricContent, 'base64').toString('utf-8');
-          if (decoded.includes('[') && decoded.includes(']')) {
-            lyricContent = decoded;
-            console.log("LRC Base64 解码成功");
-          }
-        } catch (e) {
-          console.log('LRC Base64 解码失败，使用原始内容');
-        }
+        syncedLyrics = lyricData.data.lyric; // 直接使用原始数据
+        plainLyrics = ''; // 由于不解码，无法提取纯文本
       } else {
         console.log("未找到歌词数据");
       }
       
-      if (lyricContent) {
-        syncedLyrics = lyricContent;
-        plainLyrics = extractPlainLyrics(lyricContent);
+      if (syncedLyrics) {
         console.log(`成功获取${lyricType.toUpperCase()}歌词，长度:`, syncedLyrics.length);
       }
     } else {
@@ -128,7 +101,8 @@ export default async function handler(req, res) {
       plainLyrics: plainLyrics,
       syncedLyrics: syncedLyrics,
       source: 'QQ音乐',
-      lyricType: lyricType
+      lyricType: lyricType,
+      rawData: true // 标记这是原始数据
     };
     
     // 如果没有歌词，添加提示信息
@@ -146,20 +120,4 @@ export default async function handler(req, res) {
       message: error.message
     });
   }
-}
-
-// 从歌词中提取纯文本
-function extractPlainLyrics(lyricContent) {
-  if (!lyricContent) return '';
-  
-  // 移除各种时间标签
-  const plainText = lyricContent
-    .replace(/\[\d+:\d+\.\d+\]/g, '')  // LRC 时间标签
-    .replace(/<\d+\.\d+\.\d+>/g, '')   // YRC 时间标签
-    .replace(/\(\d+,\d+\)/g, '')       // 其他时间格式
-    .replace(/\[.*?\]/g, '')           // 其他标签
-    .replace(/\s+/g, ' ')              // 合并多个空格
-    .trim();
-  
-  return plainText;
 }
