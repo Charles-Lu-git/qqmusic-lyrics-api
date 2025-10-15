@@ -1,11 +1,7 @@
 {
   "name": "qqmusic-lyrics-api",
   "version": "1.0.0",
-  "description": "QQ Music Lyrics API for LrcLib",
   "type": "module",
-  "scripts": {
-    "dev": "vercel dev"
-  },
   "dependencies": {
     "axios": "^1.6.0"
   },
