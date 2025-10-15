@@ -27,15 +27,13 @@ export default async function handler(req, res) {
   try {
     console.log('收到请求:', { trackName, artistName });
     
-    // 1. 搜索歌曲
+    // 构建搜索关键词
     const searchKeyword = artistName ? `${trackName} ${artistName}` : trackName;
     const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(searchKeyword)}`;
     
     console.log('搜索URL:', searchUrl);
     const searchResponse = await axios.get(searchUrl);
     const searchData = searchResponse.data;
-    
-    console.log('搜索API完整响应:', JSON.stringify(searchData, null, 2));
     
     if (!searchData || searchData.code !== 200 || !searchData.data || searchData.data.length === 0) {
       return res.status(404).json({
@@ -45,7 +43,7 @@ export default async function handler(req, res) {
     }
     
     const song = searchData.data[0];
-    console.log('第一首歌曲完整信息:', JSON.stringify(song, null, 2));
+    console.log('找到歌曲:', song);
     
     // 提取歌手信息
     let artists = '';
@@ -57,72 +55,35 @@ export default async function handler(req, res) {
       }
     }
     
-    // 提取歌曲名称
-    const songName = song.name || song.songname || trackName;
-    
-    // 提取时长
-    let duration = '0';
-    if (song.interval) {
-      duration = (song.interval * 1000).toString();
-    }
-    
-    console.log('解析出的歌曲信息:', {
-      id: song.id,
-      mid: song.mid,
-      name: songName,
-      artists: artists,
-      duration: duration
-    });
-    
     // 2. 获取歌词
-    let lyricUrl = '';
-    if (song.mid) {
-      lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?mid=${song.mid}`;
-    } else if (song.id) {
-      lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${song.id}`;
-    } else {
-      return res.status(400).json({
-        error: 'No song ID',
-        message: '歌曲没有有效的ID'
-      });
-    }
-    
-    console.log('歌词API URL:', lyricUrl);
+    const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?${song.mid ? `mid=${song.mid}` : `id=${song.id}`}`;
+    console.log('歌词URL:', lyricUrl);
     
     const lyricResponse = await axios.get(lyricUrl);
     const lyricData = lyricResponse.data;
-    
-    console.log('歌词API完整响应:', JSON.stringify(lyricData, null, 2));
     
     let syncedLyrics = '';
     let plainLyrics = '';
     let lyricType = 'none';
     
     if (lyricData && lyricData.code === 200 && lyricData.data) {
-      console.log('歌词数据字段:', Object.keys(lyricData.data));
-      
       // 只使用 LRC 歌词
       if (lyricData.data.lyric) {
         lyricType = 'lrc';
         let lyricContent = lyricData.data.lyric;
         
-        console.log('原始LRC歌词内容 (前200字符):', lyricContent.substring(0, 200));
-        
         // 尝试 Base64 解码
         try {
           const decoded = Buffer.from(lyricContent, 'base64').toString('utf-8');
-          console.log('Base64解码后的内容 (前200字符):', decoded.substring(0, 200));
-          
           // 检查解码后的内容是否包含 LRC 时间标签
           if (decoded.includes('[') && decoded.includes(']')) {
             lyricContent = decoded;
-            console.log('LRC Base64 解码成功，使用解码后的内容');
+            console.log('LRC Base64 解码成功');
           } else {
             console.log('解码后的内容不是有效的 LRC 格式，使用原始内容');
           }
         } catch (e) {
-          console.log('Base64 解码失败，错误信息:', e.message);
-          console.log('使用原始歌词内容');
+          console.log('Base64 解码失败，使用原始内容');
         }
         
         // 使用原始的 LRC 格式作为 syncedLyrics
@@ -131,22 +92,19 @@ export default async function handler(req, res) {
         // 从 LRC 歌词中提取纯文本
         plainLyrics = extractPlainLyrics(lyricContent);
         
-        console.log('最终syncedLyrics长度:', syncedLyrics.length);
-        console.log('最终plainLyrics长度:', plainLyrics.length);
+        console.log('成功获取 LRC 歌词，长度:', syncedLyrics.length);
       } else {
-        console.log('未找到 LRC 歌词字段');
+        console.log('未找到 LRC 歌词');
       }
-    } else {
-      console.log('歌词API返回错误:', lyricData ? lyricData.msg : '未知错误');
     }
     
     // 构建响应
     const response = {
       id: `qq_${song.mid || song.id}`,
-      trackName: songName,
+      trackName: song.name || song.songname || trackName,
       artistName: artists,
       albumName: song.album ? (song.album.name || song.album.title) : '',
-      duration: duration,
+      duration: song.interval ? (song.interval * 1000).toString() : '0',
       plainLyrics: plainLyrics,
       syncedLyrics: syncedLyrics,
       source: 'QQ音乐',
@@ -158,7 +116,7 @@ export default async function handler(req, res) {
       response.message = '未找到歌词';
     }
     
-    console.log('最终响应:', JSON.stringify(response, null, 2));
+    console.log('返回响应');
     res.status(200).json(response);
     
   } catch (error) {
