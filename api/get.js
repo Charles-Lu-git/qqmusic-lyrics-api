@@ -112,8 +112,8 @@ export default async function handler(req, res) {
     
     console.log('最终计算得到的 duration (秒):', duration);
     
-    // 2. 获取歌词 - 专门提取lrc字段
-    const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?${song.mid ? `mid=${song.mid}` : `id=${song.id}`}`;
+    // 2. 获取歌词 - 使用 id 而不是 mid
+    const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${song.id}`;
     console.log('歌词URL:', lyricUrl);
     
     const lyricResponse = await axios.get(lyricUrl);
@@ -147,13 +147,13 @@ export default async function handler(req, res) {
     // 判断是否为纯音乐
     const instrumental = !syncedLyrics || syncedLyrics.trim() === '';
     
-    // 构建符合新规范的响应（使用新的字段名）
+    // 构建符合新规范的响应
     const response = {
-      id: `qq_${song.mid || song.id}`,
+      id: song.id, // 使用整数 id
       trackName: song.name || song.songname || track_name,
       artistName: artists,
       albumName: albumName,
-      duration: duration > 0 ? duration.toString() : "0",
+      duration: duration, // 使用数值类型
       plainLyrics: plainLyrics,
       syncedLyrics: syncedLyrics,
       instrumental: instrumental,
