@@ -46,13 +46,15 @@ export default async function handler(req, res) {
     const song = searchData.data[0];
     console.log('找到歌曲:', song);
     
-    // 提取歌手信息
+    // 提取歌手信息 - 直接从 singer 字段获取
     let artists = '';
     if (song.singer) {
       if (Array.isArray(song.singer)) {
         artists = song.singer.map(s => s.name || s.title || '').filter(Boolean).join(', ');
       } else if (typeof song.singer === 'object') {
         artists = song.singer.name || song.singer.title || '';
+      } else {
+        artists = String(song.singer);
       }
     }
     
@@ -69,18 +71,40 @@ export default async function handler(req, res) {
     // 处理时长转换：将 "分:秒" 格式转换为秒数
     let duration = 0;
     if (song.interval) {
+      // 记录下原始的interval值，便于调试
+      console.log('原始 interval 值:', song.interval, '类型:', typeof song.interval);
+      
       if (typeof song.interval === 'string' && song.interval.includes(':')) {
         // 处理 "分:秒" 格式，如 "4:29"
-        const [minutes, seconds] = song.interval.split(':').map(Number);
-        duration = minutes * 60 + seconds;
+        const timeParts = song.interval.split(':');
+        if (timeParts.length === 2) {
+          const minutes = parseInt(timeParts[0], 10);
+          const seconds = parseInt(timeParts[1], 10);
+          if (!isNaN(minutes) && !isNaN(seconds)) {
+            duration = minutes * 60 + seconds;
+          } else {
+            console.warn('无法解析interval字符串中的数字:', song.interval);
+          }
+        } else {
+          console.warn('interval字符串格式不符合预期:', song.interval);
+        }
       } else if (typeof song.interval === 'number') {
         // 如果已经是数字，直接使用（假设单位是秒）
         duration = song.interval;
       } else {
         // 其他情况尝试转换为数字
-        duration = Number(song.interval) || 0;
+        duration = Number(song.interval);
+        if (isNaN(duration)) {
+          console.warn('无法将interval转换为数字:', song.interval);
+          duration = 0; // 转换失败则置0
+        }
       }
+    } else {
+      console.warn('歌曲对象中未找到 interval 字段');
     }
+    
+    // 转换后，记录最终的duration值
+    console.log('计算得到的 duration (秒):', duration);
     
     // 2. 获取歌词 - 专门提取lrc字段
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?${song.mid ? `mid=${song.mid}` : `id=${song.id}`}`;
@@ -114,15 +138,19 @@ export default async function handler(req, res) {
       console.log('歌词API返回错误:', lyricData ? lyricData.msg : '未知错误');
     }
     
+    // 判断是否为纯音乐
+    const instrumental = !syncedLyrics;
+    
     // 构建符合新规范的响应（使用新的字段名）
     const response = {
       id: `qq_${song.mid || song.id}`,
-      trackName: song.name || song.songname || track_name,  // 改为 trackName
-      artistName: artists,  // 改为 artistName
-      albumName: albumName,  // 改为 albumName
-      duration: duration.toString(),  // 改为秒数格式
-      plainLyrics: plainLyrics,  // 改为 plainLyrics
-      syncedLyrics: syncedLyrics,  // 改为 syncedLyrics
+      trackName: song.name || song.songname || track_name,
+      artistName: artists,
+      albumName: albumName,
+      duration: duration.toString(),
+      plainLyrics: plainLyrics,
+      syncedLyrics: syncedLyrics,
+      instrumental: instrumental,
       source: 'QQ音乐',
       lyric_type: lyricType
     };
