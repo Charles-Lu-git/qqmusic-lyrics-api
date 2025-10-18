@@ -15,20 +15,21 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
   
-  const { trackName, artistName } = req.query;
+  // 使用 LrcLib 标准参数名
+  const { track_name, artist_name } = req.query;
   
-  if (!trackName) {
+  if (!track_name) {
     return res.status(400).json({ 
       error: 'Missing parameter',
-      message: 'trackName 参数是必需的'
+      message: 'track_name 参数是必需的'
     });
   }
   
   try {
-    console.log('收到请求:', { trackName, artistName });
+    console.log('收到请求:', { track_name, artist_name });
     
-    // 1. 搜索歌曲
-    const searchKeyword = artistName ? `${trackName} ${artistName}` : trackName;
+    // 1. 搜索歌曲 - 使用 track_name 和 artist_name
+    const searchKeyword = artist_name ? `${track_name} ${artist_name}` : track_name;
     const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(searchKeyword)}`;
     
     console.log('搜索URL:', searchUrl);
@@ -87,17 +88,17 @@ export default async function handler(req, res) {
       console.log('歌词API返回错误:', lyricData ? lyricData.msg : '未知错误');
     }
     
-    // 构建响应
+    // 构建符合 LrcLib 规范的响应
     const response = {
       id: `qq_${song.mid || song.id}`,
-      trackName: song.name || song.songname || trackName,
-      artistName: artists,
-      albumName: song.album ? (song.album.name || song.album.title) : '',
+      track_name: song.name || song.songname || track_name,
+      artist_name: artists,
+      album_name: song.album ? (song.album.name || song.album.title) : '',
       duration: song.interval ? (song.interval * 1000).toString() : '0',
-      plainLyrics: plainLyrics,
-      syncedLyrics: syncedLyrics,
+      plain_lyrics: plainLyrics,
+      synced_lyrics: syncedLyrics,
       source: 'QQ音乐',
-      lyricType: lyricType
+      lyric_type: lyricType
     };
     
     // 如果没有歌词，添加提示信息
