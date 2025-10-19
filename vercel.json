@@ -1,19 +1,19 @@
 {
   "version": 2,
   "functions": {
-    "api/get.js": {
+    "pages/api/get.js": {
       "includeFiles": "**/*"
     }
   },
   "routes": [
     {
-      "src": "/api/get",
+      "src": "pages/api/get",
       "methods": ["GET", "OPTIONS"],
-      "dest": "/api/get.js"
+      "dest": "pages/api/get.js"
     },
     {
       "src": "/(.*)",
-      "dest": "/api/get.js"
+      "dest": "pages/api/get.js"
     }
   ]
 }
