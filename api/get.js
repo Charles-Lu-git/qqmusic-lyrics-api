@@ -15,21 +15,26 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
   
-  // 使用 LrcLib 标准参数名
-  const { track_name, artist_name } = req.query;
+  // 注意：Swift 代码使用 trackName 和 artistName 作为查询参数
+  // 但为了兼容性，我们保持原来的参数名
+  const { track_name, artist_name, trackName, artistName } = req.query;
   
-  if (!track_name || !artist_name) {
+  // 优先使用新的参数名，如果没有则使用旧的参数名
+  const finalTrackName = trackName || track_name;
+  const finalArtistName = artistName || artist_name;
+  
+  if (!finalTrackName || !finalArtistName) {
     return res.status(400).json({ 
       error: 'Missing parameters',
-      message: 'track_name 和 artist_name 参数都是必需的'
+      message: 'trackName/track_name 和 artistName/artist_name 参数都是必需的'
     });
   }
   
   try {
-    console.log('收到请求:', { track_name, artist_name });
+    console.log('收到请求:', { finalTrackName, finalArtistName });
     
-    // 1. 搜索歌曲 - 使用 track_name 和 artist_name
-    const searchKeyword = `${track_name} ${artist_name}`;
+    // 1. 搜索歌曲
+    const searchKeyword = `${finalTrackName} ${finalArtistName}`;
     const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(searchKeyword)}`;
     
     console.log('搜索URL:', searchUrl);
@@ -46,7 +51,7 @@ export default async function handler(req, res) {
     const song = searchData.data[0];
     console.log('找到歌曲:', song);
     
-    // 提取歌手信息 - 直接从 singer 字段获取
+    // 提取歌手信息
     let artists = '';
     if (song.singer) {
       if (Array.isArray(song.singer)) {
@@ -130,7 +135,7 @@ export default async function handler(req, res) {
       if (lyricData.data.lrc) {
         console.log("找到LRC歌词字段");
         lyricType = 'lrc';
-        syncedLyrics = lyricData.data.lrc; // 直接使用lrc字段的原始数据
+        syncedLyrics = lyricData.data.lrc;
         
         console.log(`LRC歌词长度:`, syncedLyrics.length);
         console.log(`LRC歌词预览:`, syncedLyrics.substring(0, 200));
@@ -147,24 +152,18 @@ export default async function handler(req, res) {
     // 判断是否为纯音乐
     const instrumental = !syncedLyrics || syncedLyrics.trim() === '';
     
-    // 构建符合新规范的响应
+    // 构建与 Lrclib 完全兼容的响应格式
     const response = {
-      id: song.id, // 使用整数 id
-      trackName: song.name || song.songname || track_name,
+      id: song.id, // 整数 ID
+      name: song.name || song.songname || finalTrackName, // 注意：Swift 代码期望 "name" 而不是 "trackName"
+      trackName: song.name || song.songname || finalTrackName, // 为了兼容性，同时提供两种格式
       artistName: artists,
       albumName: albumName,
-      duration: duration, // 使用数值类型
-      plainLyrics: plainLyrics,
-      syncedLyrics: syncedLyrics,
+      duration: duration, // 数值类型
       instrumental: instrumental,
-      source: 'QQ音乐',
-      lyric_type: lyricType
+      plainLyrics: plainLyrics,
+      syncedLyrics: syncedLyrics
     };
-    
-    // 如果没有歌词，添加提示信息
-    if (!syncedLyrics) {
-      response.message = '未找到LRC歌词';
-    }
     
     console.log('返回响应:', response);
     res.status(200).json(response);
