@@ -29,8 +29,8 @@ export default async function handler(req, res) {
   try {
     console.log('搜索:', { finalTrackName, finalArtistName });
     
-    // 简化搜索逻辑
-    const song = await findBestMatch(finalTrackName, finalArtistName);
+    // 搜索歌曲
+    const song = await searchSong(finalTrackName, finalArtistName);
     
     if (!song) {
       return res.status(404).json({
@@ -68,31 +68,51 @@ export default async function handler(req, res) {
   }
 }
 
-// 简化版搜索函数
-async function findBestMatch(trackName, artistName) {
-  // 生成搜索关键词
-  const keywords = [
-    // 主标题 + 艺术家
-    `${cleanTitle(trackName)} ${artistName}`,
-    // 只搜索主标题
-    cleanTitle(trackName),
-    // 艺术家 + 核心关键词
-    `${artistName} ${extractCoreChinese(trackName)}`,
-    // 原始搜索（备选）
-    `${trackName} ${artistName}`
+// 搜索歌曲 - 针对不同类型优化
+async function searchSong(trackName, artistName) {
+  // 判断歌曲类型并采用不同策略
+  if (isJapaneseOrEnglish(trackName)) {
+    // 日文/英文歌曲：使用精确匹配策略
+    return await searchExactMatch(trackName, artistName);
+  } else {
+    // 中文歌曲：使用模糊匹配策略
+    return await searchChineseSong(trackName, artistName);
+  }
+}
+
+// 判断是否为日文或英文歌曲
+function isJapaneseOrEnglish(text) {
+  // 包含日文字符或主要英文单词
+  const japaneseChars = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/;
+  const englishKeywords = ['Genshin', 'Impact', 'Anniversary', 'Theme', 'Song', 'Japanese'];
+  
+  return japaneseChars.test(text) || 
+         englishKeywords.some(keyword => text.includes(keyword));
+}
+
+// 精确匹配搜索（用于日文/英文歌曲）
+async function searchExactMatch(trackName, artistName) {
+  const searchKeywords = [
+    // 尝试完整标题
+    trackName,
+    // 提取核心部分（去掉副标题）
+    extractMainTitle(trackName),
+    // 只搜索艺术家
+    artistName
   ];
   
-  for (const keyword of keywords) {
+  for (const keyword of searchKeywords) {
     try {
       const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(keyword)}`;
-      console.log('尝试搜索:', keyword);
+      console.log('精确搜索:', keyword);
       
       const response = await axios.get(searchUrl);
       const data = response.data;
       
       if (data?.code === 200 && data.data?.length > 0) {
-        const bestMatch = findBestMatchInResults(data.data, trackName, artistName);
-        if (bestMatch) return bestMatch;
+        // 对于精确搜索，我们要求更高的匹配度
+        const match = findExactMatch(data.data, trackName, artistName);
+        if (match) return match;
       }
       
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -106,27 +126,94 @@ async function findBestMatch(trackName, artistName) {
   return null;
 }
 
-// 清理标题
-function cleanTitle(title) {
-  if (!title) return '';
+// 中文歌曲搜索（模糊匹配）
+async function searchChineseSong(trackName, artistName) {
+  const searchKeywords = [
+    // 清理后的标题 + 艺术家
+    `${cleanChineseTitle(trackName)} ${artistName}`,
+    // 只搜索清理后的标题
+    cleanChineseTitle(trackName),
+    // 原始标题
+    trackName
+  ];
   
+  for (const keyword of searchKeywords) {
+    try {
+      const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(keyword)}`;
+      console.log('中文搜索:', keyword);
+      
+      const response = await axios.get(searchUrl);
+      const data = response.data;
+      
+      if (data?.code === 200 && data.data?.length > 0) {
+        const match = findChineseMatch(data.data, trackName, artistName);
+        if (match) return match;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+    } catch (error) {
+      console.warn('搜索失败:', error.message);
+      continue;
+    }
+  }
+  
+  return null;
+}
+
+// 提取主标题（去掉副标题）
+function extractMainTitle(title) {
+  // 常见分隔符
+  const separators = [' - ', ' – ', ' — ', ' | ', ' // ', ' (', ' [', '【'];
+  
+  for (const sep of separators) {
+    const index = title.indexOf(sep);
+    if (index !== -1) {
+      return title.substring(0, index).trim();
+    }
+  }
+  
+  return title;
+}
+
+// 清理中文标题
+function cleanChineseTitle(title) {
   return title
-    .replace(/[《》【】]/g, '') // 移除中文括号
-    .replace(/[-—–—]+/g, ' ') // 统一各种横线为空格
-    .replace(/\s+/g, ' ') // 合并多个空格
+    .replace(/[《》【】]/g, '')
+    .replace(/[-—–—]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-// 提取核心中文
-function extractCoreChinese(text) {
-  const chineseMatch = text.match(/[\u4e00-\u9fff]+/g);
-  return chineseMatch ? chineseMatch.join(' ') : '';
+// 精确匹配查找
+function findExactMatch(results, targetTrack, targetArtist) {
+  const mainTitle = extractMainTitle(targetTrack).toLowerCase();
+  
+  for (const song of results) {
+    const songTitle = (song.name || song.songname || '').toLowerCase();
+    const songArtists = extractArtists(song).toLowerCase();
+    
+    // 检查标题是否匹配（主标题或完整标题）
+    const songMainTitle = extractMainTitle(songTitle);
+    const titleMatch = songMainTitle === mainTitle || songTitle.includes(mainTitle);
+    
+    // 检查艺术家是否匹配
+    const artistMatch = songArtists.includes(targetArtist.toLowerCase()) || 
+                       targetArtist.toLowerCase().includes(songArtists);
+    
+    if (titleMatch && artistMatch) {
+      console.log('找到精确匹配:', songTitle);
+      return song;
+    }
+  }
+  
+  // 如果没有精确匹配，返回第一个结果
+  return results.length > 0 ? results[0] : null;
 }
 
-// 在结果中找最佳匹配
-function findBestMatchInResults(results, targetTrack, targetArtist) {
-  const cleanTargetTrack = cleanTitle(targetTrack).toLowerCase();
-  const cleanTargetArtist = targetArtist.toLowerCase();
+// 中文匹配查找
+function findChineseMatch(results, targetTrack, targetArtist) {
+  const cleanTarget = cleanChineseTitle(targetTrack).toLowerCase();
   
   let bestMatch = null;
   let bestScore = 0;
@@ -136,17 +223,18 @@ function findBestMatchInResults(results, targetTrack, targetArtist) {
     
     const songTitle = (song.name || song.songname || '').toLowerCase();
     const songArtists = extractArtists(song).toLowerCase();
-    const cleanSongTitle = cleanTitle(songTitle).toLowerCase();
+    const cleanSongTitle = cleanChineseTitle(songTitle).toLowerCase();
     
     // 标题匹配
-    if (cleanSongTitle === cleanTargetTrack) {
+    if (cleanSongTitle === cleanTarget) {
       score += 100;
-    } else if (cleanSongTitle.includes(cleanTargetTrack) || cleanTargetTrack.includes(cleanSongTitle)) {
+    } else if (cleanSongTitle.includes(cleanTarget) || cleanTarget.includes(cleanSongTitle)) {
       score += 60;
     }
     
     // 艺术家匹配
-    if (songArtists.includes(cleanTargetArtist) || cleanTargetArtist.includes(songArtists)) {
+    if (songArtists.includes(targetArtist.toLowerCase()) || 
+        targetArtist.toLowerCase().includes(songArtists)) {
       score += 50;
     }
     
@@ -156,7 +244,6 @@ function findBestMatchInResults(results, targetTrack, targetArtist) {
     }
   }
   
-  // 如果没有完美匹配，返回第一个结果
   return bestMatch || (results.length > 0 ? results[0] : null);
 }
 
