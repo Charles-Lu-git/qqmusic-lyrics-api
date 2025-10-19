@@ -46,8 +46,39 @@ export default async function handler(req, res) {
       });
     }
     
-    const song = searchData.data[0];
-    console.log('找到歌曲:', song);
+    // 查找与 artistName 匹配的歌曲
+    let song = null;
+    for (const candidate of searchData.data) {
+      // 提取候选歌曲的歌手信息
+      let candidateArtists = '';
+      if (candidate.singer) {
+        if (Array.isArray(candidate.singer)) {
+          candidateArtists = candidate.singer.map(s => s.name || s.title || '').filter(Boolean).join(', ');
+        } else if (typeof candidate.singer === 'object') {
+          candidateArtists = candidate.singer.name || candidate.singer.title || '';
+        } else {
+          candidateArtists = String(candidate.singer);
+        }
+      }
+      
+      console.log(`检查歌曲: ${candidate.name || candidate.songname} - 歌手: ${candidateArtists}`);
+      
+      // 检查歌手是否匹配（不区分大小写，部分匹配）
+      if (candidateArtists.toLowerCase().includes(finalArtistName.toLowerCase()) ||
+          finalArtistName.toLowerCase().includes(candidateArtists.toLowerCase())) {
+        song = candidate;
+        console.log(`找到匹配的歌曲: ${song.name || song.songname} - 歌手: ${candidateArtists}`);
+        break;
+      }
+    }
+    
+    // 如果没有找到完全匹配的歌曲，使用第一首作为备选
+    if (!song) {
+      song = searchData.data[0];
+      console.log(`未找到完全匹配的歌曲，使用第一首结果: ${song.name || song.songname}`);
+    }
+    
+    console.log('最终选择的歌曲:', song);
     
     // 提取歌手信息
     let artists = '';
