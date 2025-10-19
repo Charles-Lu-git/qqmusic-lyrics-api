@@ -1,0 +1,9 @@
+{
+  "build": {
+    "command": "npm install"
+  },
+  "deploy": {
+    "startCommand": "node app.js",
+    "restartPolicy": "always"
+  }
+}
