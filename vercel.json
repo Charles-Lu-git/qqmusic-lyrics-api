@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "functions": {
+    "api/get.js": {
+      "includeFiles": "**/*"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/get",
+      "methods": ["GET", "OPTIONS"],
+      "dest": "/api/get.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/get.js"
+    }
+  ]
+}
