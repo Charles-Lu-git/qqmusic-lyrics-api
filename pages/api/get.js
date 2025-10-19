@@ -88,26 +88,15 @@ export default async function handler(req, res) {
 
 // 智能搜索策略
 async function smartSearch(trackName, artistName) {
-  const searchStrategies = [
-    // 策略1: 只搜索歌曲主标题（去掉副标题）
-    () => {
-      const mainTitle = extractMainTitle(trackName);
-      return `${mainTitle} ${artistName}`;
-    },
-    // 策略2: 只搜索核心关键词
-    () => extractMainTitle(trackName),
-    // 策略3: 搜索艺术家 + 核心关键词
-    () => `${artistName} ${extractMainTitle(trackName)}`,
-    // 策略4: 原始搜索（备选）
-    () => `${trackName} ${artistName}`,
-    // 策略5: 只搜索艺术家
-    () => artistName
-  ];
+  // 生成多种搜索策略
+  const searchStrategies = generateSearchStrategies(trackName, artistName);
+  
+  console.log('生成的搜索策略:', searchStrategies);
 
   for (const strategy of searchStrategies) {
     try {
-      const searchKeyword = strategy();
-      console.log(`尝试搜索策略: ${searchKeyword}`);
+      const searchKeyword = strategy.keyword;
+      console.log(`尝试搜索策略 [${strategy.type}]: ${searchKeyword}`);
       
       const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(searchKeyword)}`;
       console.log('搜索URL:', searchUrl);
@@ -117,19 +106,23 @@ async function smartSearch(trackName, artistName) {
       
       if (searchData && searchData.code === 200 && searchData.data && searchData.data.length > 0) {
         // 过滤和排序结果
-        const filteredResults = filterAndSortResults(searchData.data, trackName, artistName);
+        const filteredResults = filterAndSortResults(searchData.data, trackName, artistName, strategy.type);
         
         if (filteredResults.length > 0) {
-          console.log(`策略成功，找到 ${filteredResults.length} 个结果`);
+          console.log(`策略 [${strategy.type}] 成功，找到 ${filteredResults.length} 个结果`);
           return filteredResults;
+        } else {
+          console.log(`策略 [${strategy.type}] 找到结果但匹配度不高`);
         }
+      } else {
+        console.log(`策略 [${strategy.type}] 未找到结果`);
       }
       
       // 等待一下再尝试下一个策略，避免请求过快
       await new Promise(resolve => setTimeout(resolve, 100));
       
     } catch (error) {
-      console.warn('搜索策略失败:', error.message);
+      console.warn(`搜索策略失败 [${strategy.type}]:`, error.message);
       continue;
     }
   }
@@ -137,27 +130,118 @@ async function smartSearch(trackName, artistName) {
   return null;
 }
 
-// 提取歌曲主标题（去掉副标题）
-function extractMainTitle(fullTitle) {
-  if (!fullTitle) return '';
+// 生成多种搜索策略
+function generateSearchStrategies(trackName, artistName) {
+  const strategies = [];
   
-  // 常见分隔符
-  const separators = [' - ', ' – ', ' — ', ' | ', ' // ', ' (', ' [', '【', '《'];
+  // 清理和预处理输入
+  const cleanTrackName = cleanChineseText(trackName);
+  const cleanArtistName = cleanChineseText(artistName);
   
-  for (const sep of separators) {
-    const index = fullTitle.indexOf(sep);
-    if (index !== -1) {
-      return fullTitle.substring(0, index).trim();
-    }
+  console.log('清理后的参数:', { cleanTrackName, cleanArtistName });
+  
+  // 策略1: 只搜索清理后的歌曲名（最高优先级）
+  if (cleanTrackName) {
+    strategies.push({
+      type: 'clean_track_only',
+      keyword: cleanTrackName
+    });
   }
   
-  // 如果没有分隔符，返回原标题
-  return fullTitle.trim();
+  // 策略2: 清理后的歌曲名 + 艺术家
+  if (cleanTrackName && cleanArtistName) {
+    strategies.push({
+      type: 'clean_track_artist',
+      keyword: `${cleanTrackName} ${cleanArtistName}`
+    });
+  }
+  
+  // 策略3: 原始歌曲名（清理特殊字符）
+  const safeTrackName = removeSpecialCharacters(trackName);
+  if (safeTrackName && safeTrackName !== cleanTrackName) {
+    strategies.push({
+      type: 'safe_track_only',
+      keyword: safeTrackName
+    });
+  }
+  
+  // 策略4: 原始歌曲名 + 艺术家
+  if (safeTrackName && cleanArtistName) {
+    strategies.push({
+      type: 'safe_track_artist',
+      keyword: `${safeTrackName} ${cleanArtistName}`
+    });
+  }
+  
+  // 策略5: 提取核心中文部分
+  const coreChinese = extractCoreChinese(trackName);
+  if (coreChinese && coreChinese !== cleanTrackName) {
+    strategies.push({
+      type: 'core_chinese_only',
+      keyword: coreChinese
+    });
+  }
+  
+  // 策略6: 核心中文 + 艺术家
+  if (coreChinese && cleanArtistName) {
+    strategies.push({
+      type: 'core_chinese_artist',
+      keyword: `${coreChinese} ${cleanArtistName}`
+    });
+  }
+  
+  // 策略7: 只搜索艺术家（最后的手段）
+  if (cleanArtistName) {
+    strategies.push({
+      type: 'artist_only',
+      keyword: cleanArtistName
+    });
+  }
+  
+  return strategies;
+}
+
+// 清理中文字符串
+function cleanChineseText(text) {
+  if (!text) return '';
+  
+  return text
+    .replace(/[《》【】]/g, '') // 移除中文括号
+    .replace(/[-—–—]/g, ' ') // 统一各种横线为空格
+    .replace(/\s+/g, ' ') // 合并多个空格
+    .replace(/^[^a-zA-Z0-9\u4e00-\u9fff]*|[^a-zA-Z0-9\u4e00-\u9fff]*$/g, '') // 移除首尾非中英文数字字符
+    .trim();
+}
+
+// 移除特殊字符但保留中文
+function removeSpecialCharacters(text) {
+  if (!text) return '';
+  
+  return text
+    .replace(/[^\w\u4e00-\u9fff\s\-]/g, '') // 只保留字母、数字、中文、空格、横线
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// 提取核心中文部分
+function extractCoreChinese(text) {
+  if (!text) return '';
+  
+  // 匹配中文字符（包括繁体）
+  const chineseMatch = text.match(/[\u4e00-\u9fff]+/g);
+  if (chineseMatch) {
+    return chineseMatch.join(' ');
+  }
+  
+  return '';
 }
 
 // 过滤和排序搜索结果
-function filterAndSortResults(results, targetTrackName, targetArtistName) {
-  const targetMainTitle = extractMainTitle(targetTrackName).toLowerCase();
+function filterAndSortResults(results, targetTrackName, targetArtistName, strategyType) {
+  const cleanTargetTrack = cleanChineseText(targetTrackName).toLowerCase();
+  const cleanTargetArtist = cleanChineseText(targetArtistName).toLowerCase();
+  
+  console.log(`过滤条件: track="${cleanTargetTrack}", artist="${cleanTargetArtist}"`);
   
   return results
     .map(song => {
@@ -167,33 +251,58 @@ function filterAndSortResults(results, targetTrackName, targetArtistName) {
       // 提取歌曲信息
       const songTitle = (song.name || song.songname || '').toLowerCase();
       const songArtists = extractArtists(song).toLowerCase();
-      const songMainTitle = extractMainTitle(songTitle);
+      const cleanSongTitle = cleanChineseText(songTitle).toLowerCase();
       
-      // 标题匹配度
-      if (songMainTitle === targetMainTitle) {
-        score += 100; // 主标题完全匹配
-      } else if (songTitle.includes(targetMainTitle)) {
-        score += 80; // 主标题包含
-      } else if (targetMainTitle.includes(songMainTitle)) {
-        score += 60; // 被主标题包含
+      console.log(`检查歌曲: "${songTitle}" - 艺术家: "${songArtists}"`);
+      
+      // 标题匹配度（最高权重）
+      if (cleanSongTitle === cleanTargetTrack) {
+        score += 100; // 完全匹配
+        console.log(`  → 标题完全匹配 +100`);
+      } else if (cleanSongTitle.includes(cleanTargetTrack)) {
+        score += 80; // 包含目标
+        console.log(`  → 标题包含目标 +80`);
+      } else if (cleanTargetTrack.includes(cleanSongTitle)) {
+        score += 60; // 被目标包含
+        console.log(`  → 目标包含标题 +60`);
+      } else {
+        // 检查中文核心匹配
+        const targetCore = extractCoreChinese(targetTrackName).toLowerCase();
+        const songCore = extractCoreChinese(songTitle).toLowerCase();
+        if (targetCore && songCore && targetCore === songCore) {
+          score += 90;
+          console.log(`  → 中文核心匹配 +90`);
+        } else if (targetCore && songCore && songCore.includes(targetCore)) {
+          score += 70;
+          console.log(`  → 中文核心包含 +70`);
+        }
       }
       
       // 艺术家匹配度
-      if (songArtists.includes(targetArtistName.toLowerCase())) {
+      if (songArtists.includes(cleanTargetArtist)) {
         score += 50;
-      } else if (targetArtistName.toLowerCase().includes(songArtists)) {
+        console.log(`  → 艺术家匹配 +50`);
+      } else if (cleanTargetArtist.includes(songArtists)) {
         score += 30;
+        console.log(`  → 艺术家部分匹配 +30`);
       }
       
-      // 时长合理性（避免太短或太长的歌曲）
-      const duration = calculateDuration(song.interval);
-      if (duration > 60 && duration < 600) { // 1分钟到10分钟
-        score += 10;
+      // 根据搜索策略调整权重
+      if (strategyType.includes('clean') || strategyType.includes('core')) {
+        score += 5; // 清理策略的额外权重
       }
+      
+      // 时长合理性
+      const duration = calculateDuration(song.interval);
+      if (duration > 60 && duration < 600) {
+        score += 5;
+      }
+      
+      console.log(`  → 最终分数: ${score}`);
       
       return { song, score };
     })
-    .filter(item => item.score > 0) // 只保留有匹配度的结果
+    .filter(item => item.score > 20) // 只保留有一定匹配度的结果
     .sort((a, b) => b.score - a.score) // 按分数降序排列
     .map(item => item.song);
 }
