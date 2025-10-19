@@ -1,9 +1,10 @@
 {
   "build": {
-    "command": "npm install"
+    "command": "npm run build",
+    "workingDirectory": "."
   },
   "deploy": {
-    "startCommand": "node app.js",
-    "restartPolicy": "always"
+    "startCommand": "npm start",
+    "workingDirectory": "."
   }
 }
