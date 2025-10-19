@@ -2,9 +2,6 @@
   "name": "qqmusic-lyrics-api",
   "version": "1.0.0",
   "type": "module",
-  "engines": {
-    "node": "22.x"
-  }
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,4 +13,7 @@
     "react-dom": "^18.0.0",
     "axios": "^1.6.0"
   },
+ "engines": {
+    "node": "22.x"
+  }
 }
