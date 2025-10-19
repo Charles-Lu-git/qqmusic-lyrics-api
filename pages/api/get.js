@@ -5,7 +5,7 @@ const englishToChineseMap = {
   // 林宥嘉
   'unrequited_林宥嘉': '浪费',
   'fool_林宥嘉': '傻子',
-  'Who Doesn't Wanna_林宥嘉': '谁不想',
+  'Who Doesnt Wanna_林宥嘉': '谁不想',
   // 动力火车
   'Dong_动力火车': '当',
 };
