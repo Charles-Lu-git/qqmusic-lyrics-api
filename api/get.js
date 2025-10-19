@@ -15,11 +15,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
   
-  // 注意：Swift 代码使用 trackName 和 artistName 作为查询参数
-  // 但为了兼容性，我们保持原来的参数名
+  // 支持两种参数格式
   const { track_name, artist_name, trackName, artistName } = req.query;
   
-  // 优先使用新的参数名，如果没有则使用旧的参数名
   const finalTrackName = trackName || track_name;
   const finalArtistName = artistName || artist_name;
   
@@ -128,10 +126,11 @@ export default async function handler(req, res) {
     
     let syncedLyrics = '';
     let plainLyrics = '';
+    let translatedLyrics = '';
     let lyricType = 'none';
     
     if (lyricData && lyricData.code === 200 && lyricData.data) {
-      // 专门提取lrc字段
+      // 专门提取lrc字段 - 原始歌词
       if (lyricData.data.lrc) {
         console.log("找到LRC歌词字段");
         lyricType = 'lrc';
@@ -142,8 +141,26 @@ export default async function handler(req, res) {
         
         // 从LRC歌词中提取纯文本，保留换行结构
         plainLyrics = extractPlainLyrics(syncedLyrics);
+        
+        // 确保同步歌词以换行符结尾
+        if (syncedLyrics && !syncedLyrics.endsWith('\n')) {
+          syncedLyrics += '\n';
+        }
+      }
+      
+      // 提取翻译歌词
+      if (lyricData.data.tlrc) {
+        console.log("找到翻译歌词字段");
+        translatedLyrics = lyricData.data.tlrc;
+        console.log(`翻译歌词长度:`, translatedLyrics.length);
+        console.log(`翻译歌词预览:`, translatedLyrics.substring(0, 200));
+      } else if (lyricData.data.klyric) {
+        console.log("找到KLYRIC歌词字段");
+        translatedLyrics = lyricData.data.klyric;
+        console.log(`KLYRIC歌词长度:`, translatedLyrics.length);
+        console.log(`KLYRIC歌词预览:`, translatedLyrics.substring(0, 200));
       } else {
-        console.log("未找到lrc字段，可用字段:", Object.keys(lyricData.data));
+        console.log("未找到翻译歌词字段，可用字段:", Object.keys(lyricData.data));
       }
     } else {
       console.log('歌词API返回错误:', lyricData ? lyricData.msg : '未知错误');
@@ -152,17 +169,19 @@ export default async function handler(req, res) {
     // 判断是否为纯音乐
     const instrumental = !syncedLyrics || syncedLyrics.trim() === '';
     
-    // 构建与 Lrclib 完全兼容的响应格式
+    // 构建响应
     const response = {
-      id: song.id, // 整数 ID
-      name: song.name || song.songname || finalTrackName, // 注意：Swift 代码期望 "name" 而不是 "trackName"
-      trackName: song.name || song.songname || finalTrackName, // 为了兼容性，同时提供两种格式
+      id: song.id,
+      name: song.name || song.songname || finalTrackName,
+      trackName: song.name || song.songname || finalTrackName,
       artistName: artists,
       albumName: albumName,
-      duration: duration, // 数值类型
+      duration: duration,
       instrumental: instrumental,
       plainLyrics: plainLyrics,
-      syncedLyrics: syncedLyrics
+      syncedLyrics: syncedLyrics,
+      translatedLyrics: translatedLyrics,
+      translationLanguage: translatedLyrics ? detectTranslationLanguage(translatedLyrics) : null
     };
     
     console.log('返回响应:', response);
@@ -206,4 +225,19 @@ function extractPlainLyrics(lyricContent) {
   
   // 重新组合成带换行的字符串
   return plainLines.join('\n');
+}
+
+// 检测翻译歌词的语言
+function detectTranslationLanguage(lyrics) {
+  if (!lyrics) return null;
+  
+  const koreanRegex = /[가-힣]/;
+  const japaneseRegex = /[ぁ-んァ-ン一-龯]/;
+  const chineseRegex = /[一-龯]/;
+  
+  if (koreanRegex.test(lyrics)) return 'ko';
+  if (japaneseRegex.test(lyrics)) return 'ja';
+  if (chineseRegex.test(lyrics)) return 'zh';
+  
+  return 'en';
 }
