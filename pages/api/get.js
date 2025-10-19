@@ -1,5 +1,54 @@
 import axios from 'axios';
 
+// 中英文歌名映射表 - 包含艺术家信息避免混淆
+const englishToChineseMap = {
+  // 林宥嘉
+  'unrequited_yoga lin': '浪费',
+  'unrequited_林宥嘉': '浪费',
+  'fool_yoga lin': '傻子',
+  'fool_林宥嘉': '傻子',
+  'suspicious_yoga lin': '诱',
+  'suspicious_林宥嘉': '诱',
+  
+  // 周杰伦
+  'quiet_jay chou': '安静',
+  'quiet_周杰伦': '安静',
+  'simple love_jay chou': '简单爱',
+  'simple love_周杰伦': '简单爱',
+  'sunny day_jay chou': '晴天',
+  'sunny day_周杰伦': '晴天',
+  
+  // 蔡依林
+  'play_jolin tsai': '舞娘',
+  'play_蔡依林': '舞娘',
+  
+  // 张惠妹
+  'remember_a-mei': '记得',
+  'remember_张惠妹': '记得',
+  
+  // 陈奕迅
+  'lonely warrior_eason chan': '孤勇者',
+  'lonely warrior_陈奕迅': '孤勇者',
+  'ten years_eason chan': '十年',
+  'ten years_陈奕迅': '十年',
+  
+  // 五月天
+  'stubborn_mayday': '倔强',
+  'stubborn_五月天': '倔强',
+  
+  // 孙燕姿
+  'meet_stefanie sun': '遇见',
+  'meet_孙燕姿': '遇见',
+  
+  // 王力宏
+  'the only one_lee hom wang': '唯一',
+  'the only one_王力宏': '唯一',
+  
+  // 梁静茹
+  'courage_fish leong': '勇气',
+  'courage_梁静茹': '勇气',
+};
+
 export default async function handler(req, res) {
   // CORS 设置
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -33,8 +82,36 @@ export default async function handler(req, res) {
       length: finalTrackName.length
     });
     
+    // 检查英文歌名映射（包含艺术家信息）
+    const normalizedTrackName = finalTrackName.toLowerCase().trim();
+    const normalizedArtistName = finalArtistName.toLowerCase().trim();
+    
+    let searchTrackName = finalTrackName;
+    
+    // 先尝试精确匹配：歌名_艺术家
+    const exactKey = `${normalizedTrackName}_${normalizedArtistName}`;
+    if (englishToChineseMap[exactKey]) {
+      searchTrackName = englishToChineseMap[exactKey];
+      console.log(`精确映射: "${finalTrackName}" + "${finalArtistName}" -> "${searchTrackName}"`);
+    } else {
+      // 尝试部分匹配：检查所有可能的组合
+      for (const [key, chineseName] of Object.entries(englishToChineseMap)) {
+        const [engName, engArtist] = key.split('_');
+        
+        // 如果歌名匹配且艺术家部分匹配
+        if (engName === normalizedTrackName && 
+            (normalizedArtistName.includes(engArtist) || engArtist.includes(normalizedArtistName))) {
+          searchTrackName = chineseName;
+          console.log(`部分匹配映射: "${finalTrackName}" + "${finalArtistName}" -> "${searchTrackName}"`);
+          break;
+        }
+      }
+    }
+    
+    console.log('实际搜索歌名:', searchTrackName);
+    
     // 直接搜索 - 使用最简单的策略
-    const song = await directSearch(finalTrackName, finalArtistName);
+    const song = await directSearch(searchTrackName, finalArtistName);
     
     if (!song) {
       return res.status(404).json({
