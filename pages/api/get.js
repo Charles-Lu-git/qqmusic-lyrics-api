@@ -5,7 +5,12 @@ const englishToChineseMap = {
   // 林宥嘉
   'unrequited_林宥嘉': '浪费',
   'fool_林宥嘉': '傻子',
-  'Who Doesn’t Wanna_林宥嘉': '谁不想',
+  "who doesn't wanna_林宥嘉": '谁不想',
+  "who doesn't wanna_yoga lin": '谁不想',
+  "who doesnt wanna_林宥嘉": '谁不想',
+  "who doesnt wanna_yoga lin": '谁不想',
+  'who doesn’t wanna_林宥嘉': '谁不想',  // 使用正确的特殊字符
+  'who doesn’t wanna_yoga lin': '谁不想', // 使用正确的特殊字符
   // 动力火车
   'dong_动力火车': '当',
   'dong_power station': '当',
