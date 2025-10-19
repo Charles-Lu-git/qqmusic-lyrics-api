@@ -126,11 +126,10 @@ export default async function handler(req, res) {
     
     let syncedLyrics = '';
     let plainLyrics = '';
-    let translatedLyrics = '';
     let lyricType = 'none';
     
     if (lyricData && lyricData.code === 200 && lyricData.data) {
-      // 专门提取lrc字段 - 原始歌词
+      // 专门提取lrc字段
       if (lyricData.data.lrc) {
         console.log("找到LRC歌词字段");
         lyricType = 'lrc';
@@ -142,25 +141,36 @@ export default async function handler(req, res) {
         // 从LRC歌词中提取纯文本，保留换行结构
         plainLyrics = extractPlainLyrics(syncedLyrics);
         
-        // 确保同步歌词以换行符结尾
-        if (syncedLyrics && !syncedLyrics.endsWith('\n')) {
-          syncedLyrics += '\n';
+        // 添加调试信息，检查原始歌词的最后几行
+        const lines = syncedLyrics.split('\n');
+        console.log('原始歌词总行数:', lines.length);
+        console.log('最后5行原始歌词:');
+        for (let i = Math.max(0, lines.length - 5); i < lines.length; i++) {
+          console.log(`[${i}] ${lines[i]}`);
         }
-      }
-      
-      // 提取翻译歌词
-      if (lyricData.data.tlrc) {
-        console.log("找到翻译歌词字段");
-        translatedLyrics = lyricData.data.tlrc;
-        console.log(`翻译歌词长度:`, translatedLyrics.length);
-        console.log(`翻译歌词预览:`, translatedLyrics.substring(0, 200));
-      } else if (lyricData.data.klyric) {
-        console.log("找到KLYRIC歌词字段");
-        translatedLyrics = lyricData.data.klyric;
-        console.log(`KLYRIC歌词长度:`, translatedLyrics.length);
-        console.log(`KLYRIC歌词预览:`, translatedLyrics.substring(0, 200));
+        
+        // 检查是否需要添加结束时间标签
+        if (lines.length > 0) {
+          const lastLine = lines[lines.length - 1].trim();
+          // 如果最后一行是歌词行而不是空时间标签，我们需要添加一个
+          if (lastLine && !lastLine.match(/^\[\d+:\d+\.\d+\]\s*$/)) {
+            console.log('检测到歌词缺少结束时间标签，尝试添加...');
+            // 尝试从最后一行提取时间
+            const timeMatch = lastLine.match(/\[(\d+):(\d+\.\d+)\]/);
+            if (timeMatch) {
+              const minutes = parseInt(timeMatch[1]);
+              const seconds = parseFloat(timeMatch[2]);
+              // 添加一个稍后的时间作为结束标记（例如+3秒）
+              const endMinutes = minutes;
+              const endSeconds = seconds + 3;
+              const endTimeTag = `[${endMinutes}:${endSeconds.toFixed(2)}]`;
+              syncedLyrics += `\n${endTimeTag}`;
+              console.log(`添加结束时间标签: ${endTimeTag}`);
+            }
+          }
+        }
       } else {
-        console.log("未找到翻译歌词字段，可用字段:", Object.keys(lyricData.data));
+        console.log("未找到lrc字段，可用字段:", Object.keys(lyricData.data));
       }
     } else {
       console.log('歌词API返回错误:', lyricData ? lyricData.msg : '未知错误');
@@ -169,19 +179,17 @@ export default async function handler(req, res) {
     // 判断是否为纯音乐
     const instrumental = !syncedLyrics || syncedLyrics.trim() === '';
     
-    // 构建响应
+    // 构建与 Lrclib 完全兼容的响应格式
     const response = {
-      id: song.id,
+      id: song.id, // 整数 ID
       name: song.name || song.songname || finalTrackName,
       trackName: song.name || song.songname || finalTrackName,
       artistName: artists,
       albumName: albumName,
-      duration: duration,
+      duration: duration, // 数值类型
       instrumental: instrumental,
       plainLyrics: plainLyrics,
-      syncedLyrics: syncedLyrics,
-      translatedLyrics: translatedLyrics,
-      translationLanguage: translatedLyrics ? detectTranslationLanguage(translatedLyrics) : null
+      syncedLyrics: syncedLyrics
     };
     
     console.log('返回响应:', response);
@@ -225,19 +233,4 @@ function extractPlainLyrics(lyricContent) {
   
   // 重新组合成带换行的字符串
   return plainLines.join('\n');
-}
-
-// 检测翻译歌词的语言
-function detectTranslationLanguage(lyrics) {
-  if (!lyrics) return null;
-  
-  const koreanRegex = /[가-힣]/;
-  const japaneseRegex = /[ぁ-んァ-ン一-龯]/;
-  const chineseRegex = /[一-龯]/;
-  
-  if (koreanRegex.test(lyrics)) return 'ko';
-  if (japaneseRegex.test(lyrics)) return 'ja';
-  if (chineseRegex.test(lyrics)) return 'zh';
-  
-  return 'en';
 }
