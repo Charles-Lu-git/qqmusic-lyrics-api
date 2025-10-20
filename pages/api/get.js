@@ -318,6 +318,12 @@ function findBestMatch(results, targetTrack, artists, originalTrackName, origina
     }
   }
   
+  // 如果没有找到合适的匹配，但结果不为空，选择艺术家匹配度最高的
+  if (!bestMatch || bestScore < 60) {
+    console.log('没有高分数匹配，尝试艺术家匹配度最高的');
+    bestMatch = findBestArtistMatch(results, artists);
+  }
+  
   if (bestMatch) {
     console.log(`最佳匹配: "${getSongName(bestMatch)}" - 艺术家: "${extractArtists(bestMatch)}" - 分数: ${bestScore}`);
   } else if (results.length > 0) {
@@ -367,7 +373,40 @@ function findExactMatch(results, originalTrackName, originalArtistName) {
   return null;
 }
 
-// 计算匹配分数 - 改进版，修复分数计算问题
+// 查找艺术家匹配度最高的歌曲
+function findBestArtistMatch(results, artists) {
+  let bestMatch = null;
+  let bestArtistScore = 0;
+  
+  for (const song of results) {
+    const songArtists = extractArtists(song).toLowerCase();
+    let artistScore = 0;
+    
+    for (const artist of artists) {
+      const artistLower = artist.toLowerCase();
+      if (songArtists === artistLower) {
+        artistScore += 50; // 完全匹配
+      } else if (songArtists.includes(artistLower)) {
+        artistScore += 30; // 包含
+      } else if (artistLower.includes(songArtists)) {
+        artistScore += 20; // 被包含
+      }
+    }
+    
+    if (artistScore > bestArtistScore) {
+      bestArtistScore = artistScore;
+      bestMatch = song;
+    }
+  }
+  
+  if (bestMatch) {
+    console.log(`艺术家最佳匹配: "${getSongName(bestMatch)}" - 艺术家: "${extractArtists(bestMatch)}" - 艺术家分数: ${bestArtistScore}`);
+  }
+  
+  return bestMatch;
+}
+
+// 计算匹配分数 - 改进版，艺术家匹配更重要
 function calculateMatchScore(song, targetTrack, artists, originalTrackName, originalArtistName) {
   let score = 0;
   
@@ -380,33 +419,9 @@ function calculateMatchScore(song, targetTrack, artists, originalTrackName, orig
   const originalTrackNameLower = originalTrackName.toLowerCase();
   const originalArtistNameLower = originalArtistName.toLowerCase();
   
-  // 标题匹配 - 使用API返回的实际歌曲名
-  if (songTitle === originalTrackNameLower) {
-    score += 100; // 完全匹配原始歌名最高分
-  } else if (songTitle.includes(originalTrackNameLower) && originalTrackNameLower.length > 5) {
-    score += 90; // 包含原始歌名且原始歌名较长
-  } else if (originalTrackNameLower.includes(songTitle) && songTitle.length > 5) {
-    score += 85; // 被原始歌名包含且歌曲名较长
-  } else if (songTitle === targetTrackLower) {
-    score += 80; // 完全匹配预处理歌名
-  } else if (songTitle.includes(targetTrackLower) && targetTrackLower.length > 5) {
-    score += 70; // 包含预处理歌名且预处理歌名较长
-  } else if (targetTrackLower.includes(songTitle) && songTitle.length > 5) {
-    score += 65; // 被预处理歌名包含且歌曲名较长
-  } else {
-    // 基础匹配 - 检查共同单词
-    const songWords = new Set(songTitle.split(/\s+/));
-    const targetWords = new Set(targetTrackLower.split(/\s+/));
-    const commonWords = [...songWords].filter(word => targetWords.has(word));
-    
-    if (commonWords.length > 0) {
-      score += commonWords.length * 10;
-    }
-  }
-  
-  // 艺术家匹配 - 修复分数计算问题
-  const songArtistsArray = songArtists.split(/\s*,\s*|\s+&\s+/);
+  // 艺术家匹配 - 这是最重要的因素
   let artistScore = 0;
+  const songArtistsArray = songArtists.split(/\s*,\s*|\s+&\s+/);
   
   for (const targetArtist of artists) {
     const targetArtistLower = targetArtist.toLowerCase();
@@ -414,13 +429,13 @@ function calculateMatchScore(song, targetTrack, artists, originalTrackName, orig
     
     for (const songArtist of songArtistsArray) {
       if (songArtist === originalArtistNameLower) {
-        bestArtistMatch = Math.max(bestArtistMatch, 50); // 完全匹配原始艺术家名
+        bestArtistMatch = Math.max(bestArtistMatch, 100); // 完全匹配原始艺术家名
       } else if (songArtist === targetArtistLower) {
-        bestArtistMatch = Math.max(bestArtistMatch, 40); // 完全匹配预处理艺术家名
+        bestArtistMatch = Math.max(bestArtistMatch, 80); // 完全匹配预处理艺术家名
       } else if (songArtist.includes(originalArtistNameLower) || originalArtistNameLower.includes(songArtist)) {
-        bestArtistMatch = Math.max(bestArtistMatch, 30); // 部分匹配原始艺术家名
+        bestArtistMatch = Math.max(bestArtistMatch, 60); // 部分匹配原始艺术家名
       } else if (songArtist.includes(targetArtistLower) || targetArtistLower.includes(songArtist)) {
-        bestArtistMatch = Math.max(bestArtistMatch, 20); // 部分匹配预处理艺术家名
+        bestArtistMatch = Math.max(bestArtistMatch, 40); // 部分匹配预处理艺术家名
       }
     }
     
@@ -428,8 +443,34 @@ function calculateMatchScore(song, targetTrack, artists, originalTrackName, orig
   }
   
   // 防止艺术家分数过高
-  artistScore = Math.min(artistScore, 50);
+  artistScore = Math.min(artistScore, 100);
   score += artistScore;
+  
+  // 标题匹配 - 只有在艺术家匹配良好的情况下才重要
+  if (artistScore >= 40) { // 只有当艺术家匹配度较高时才考虑标题匹配
+    if (songTitle === originalTrackNameLower) {
+      score += 50; // 完全匹配原始歌名
+    } else if (songTitle === targetTrackLower) {
+      score += 40; // 完全匹配预处理歌名
+    } else if (songTitle.includes(originalTrackNameLower) && originalTrackNameLower.length > 5) {
+      score += 30; // 包含原始歌名且原始歌名较长
+    } else if (originalTrackNameLower.includes(songTitle) && songTitle.length > 5) {
+      score += 25; // 被原始歌名包含且歌曲名较长
+    } else if (songTitle.includes(targetTrackLower) && targetTrackLower.length > 5) {
+      score += 20; // 包含预处理歌名且预处理歌名较长
+    } else if (targetTrackLower.includes(songTitle) && songTitle.length > 5) {
+      score += 15; // 被预处理歌名包含且歌曲名较长
+    } else {
+      // 基础匹配 - 检查共同单词
+      const songWords = new Set(songTitle.split(/\s+/));
+      const targetWords = new Set(targetTrackLower.split(/\s+/));
+      const commonWords = [...songWords].filter(word => targetWords.has(word));
+      
+      if (commonWords.length > 0) {
+        score += commonWords.length * 5;
+      }
+    }
+  }
   
   return score;
 }
