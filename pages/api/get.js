@@ -4,7 +4,7 @@ import axios from 'axios';
 const englishToChineseMap = {
   // 林宥嘉
   'unrequited_林宥嘉': '浪费',
-  'fool_林宥嘉': '傻子'
+  'fool_林宥嘉': '傻子',
   // 动力火车
   'dong_动力火车': '当',
 };
