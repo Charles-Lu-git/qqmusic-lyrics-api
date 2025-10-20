@@ -224,12 +224,12 @@ function findBestMatch(results, targetTrack, artists, originalTrackName, origina
   const exactMatch = findExactMatch(results, originalTrackName, originalArtistName);
   if (exactMatch) return exactMatch;
   
-  // 使用评分系统 - 平衡考虑歌曲名和艺术家
+  // 使用更精确的评分系统
   let bestMatch = null;
   let bestScore = 0;
   
   for (const song of results) {
-    const score = calculateBalancedScore(song, targetTrack, artists, originalTrackName, originalArtistName);
+    const score = calculatePreciseScore(song, targetTrack, artists, originalTrackName, originalArtistName);
     const songName = getSongName(song);
     
     console.log(`检查: "${songName}" - "${extractArtists(song)}" - 分数: ${score}`);
@@ -267,8 +267,8 @@ function findExactMatch(results, originalTrackName, originalArtistName) {
   return null;
 }
 
-// 平衡评分系统 - 综合考虑歌曲名和艺术家匹配度
-function calculateBalancedScore(song, targetTrack, artists, originalTrackName, originalArtistName) {
+// 更精确的评分系统
+function calculatePreciseScore(song, targetTrack, artists, originalTrackName, originalArtistName) {
   const songName = getSongName(song);
   if (!songName) return 0;
   
@@ -281,19 +281,19 @@ function calculateBalancedScore(song, targetTrack, artists, originalTrackName, o
   let titleScore = 0;
   let artistScore = 0;
   
-  // 计算歌曲名匹配分数
+  // 计算歌曲名匹配分数 - 更精确的匹配
   if (songTitle === originalTrackNameLower) {
-    titleScore = 100; // 完全匹配原始歌名
+    titleScore = 100; // 完全匹配原始歌名 - 最高分
+  } else if (songTitle.includes(originalTrackNameLower) && originalTrackNameLower.length > 5) {
+    titleScore = 80; // 包含原始歌名且原始歌名较长
+  } else if (originalTrackNameLower.includes(songTitle) && songTitle.length > 5) {
+    titleScore = 70; // 被原始歌名包含且歌曲名较长
   } else if (songTitle === targetTrackLower) {
-    titleScore = 80; // 完全匹配预处理歌名
-  } else if (songTitle.includes(originalTrackNameLower) && originalTrackNameLower.length > 3) {
-    titleScore = 60; // 包含原始歌名
-  } else if (originalTrackNameLower.includes(songTitle) && songTitle.length > 3) {
-    titleScore = 50; // 被原始歌名包含
-  } else if (songTitle.includes(targetTrackLower) && targetTrackLower.length > 3) {
-    titleScore = 40; // 包含预处理歌名
-  } else if (targetTrackLower.includes(songTitle) && songTitle.length > 3) {
-    titleScore = 30; // 被预处理歌名包含
+    titleScore = 60; // 完全匹配预处理歌名
+  } else if (songTitle.includes(targetTrackLower) && targetTrackLower.length > 5) {
+    titleScore = 50; // 包含预处理歌名且预处理歌名较长
+  } else if (targetTrackLower.includes(songTitle) && songTitle.length > 5) {
+    titleScore = 40; // 被预处理歌名包含且歌曲名较长
   }
   
   // 计算艺术家匹配分数
@@ -319,13 +319,23 @@ function calculateBalancedScore(song, targetTrack, artists, originalTrackName, o
     }
   }
   
-  // 计算综合分数 - 使用加权平均
-  // 歌曲名权重: 60%，艺术家权重: 40%
-  const totalScore = (titleScore * 0.6) + (artistScore * 0.4);
+  // 计算综合分数 - 使用更精确的加权
+  // 歌曲名权重: 70%，艺术家权重: 30%
+  let totalScore = (titleScore * 0.7) + (artistScore * 0.3);
+  
+  // 特殊情况处理：如果歌曲名完全匹配原始歌名，给予最高优先级
+  if (songTitle === originalTrackNameLower) {
+    totalScore = Math.max(totalScore, 95); // 确保完全匹配原始歌名的歌曲得分很高
+  }
   
   // 如果歌曲名和艺术家都匹配得很好，给予额外奖励
-  if (titleScore >= 60 && artistScore >= 60) {
-    return totalScore + 20;
+  if (titleScore >= 70 && artistScore >= 80) {
+    totalScore += 15;
+  }
+  
+  // 特殊情况：如果艺术家完全匹配但歌曲名部分匹配，给予中等奖励
+  if (artistScore === 100 && titleScore >= 40) {
+    totalScore += 10;
   }
   
   return totalScore;
