@@ -4,7 +4,7 @@ import axios from 'axios';
 const englishToChineseMap = {
   // 林宥嘉
   'unrequited_林宥嘉': '浪费',
-  'fool_林宥嘉': '傻子',
+  'fool_林宥嘉': '傻子'
   'who doesn’t wanna_林宥嘉': '谁不想',
   // 动力火车
   'dong_动力火车': '当',
@@ -47,37 +47,45 @@ export default async function handler(req, res) {
     const processedTrackName = preprocessTrackName(finalTrackName);
     console.log('预处理后歌名:', processedTrackName);
     
+    // 预处理艺术家 - 处理多艺术家情况
+    const processedArtists = preprocessArtists(finalArtistName);
+    console.log('预处理后艺术家:', processedArtists);
+    
     // 检查英文歌名映射（包含艺术家信息）
     const normalizedTrackName = processedTrackName.toLowerCase().trim();
-    const normalizedArtistName = finalArtistName.toLowerCase().trim();
     
     let searchTrackName = processedTrackName;
     let mapped = false;
     
-    // 先尝试精确匹配：歌名_艺术家
-    const exactKey = `${normalizedTrackName}_${normalizedArtistName}`;
-    console.log('尝试精确匹配键:', exactKey);
-    
-    if (englishToChineseMap[exactKey]) {
-      searchTrackName = englishToChineseMap[exactKey];
-      mapped = true;
-      console.log(`精确映射: "${finalTrackName}" + "${finalArtistName}" -> "${searchTrackName}"`);
-    } else {
-      // 尝试部分匹配：检查所有可能的组合
-      for (const [key, chineseName] of Object.entries(englishToChineseMap)) {
-        const [engName, engArtist] = key.split('_');
-        
-        console.log(`检查映射: "${engName}" + "${engArtist}" -> "${chineseName}"`);
-        
-        // 如果歌名匹配且艺术家部分匹配
-        if (engName === normalizedTrackName && 
-            (normalizedArtistName.includes(engArtist) || engArtist.includes(normalizedArtistName))) {
-          searchTrackName = chineseName;
-          mapped = true;
-          console.log(`部分匹配映射: "${finalTrackName}" + "${finalArtistName}" -> "${searchTrackName}"`);
-          break;
+    // 对每个艺术家尝试映射
+    for (const artist of processedArtists) {
+      const normalizedArtistName = artist.toLowerCase().trim();
+      
+      // 先尝试精确匹配：歌名_艺术家
+      const exactKey = `${normalizedTrackName}_${normalizedArtistName}`;
+      console.log('尝试精确匹配键:', exactKey);
+      
+      if (englishToChineseMap[exactKey]) {
+        searchTrackName = englishToChineseMap[exactKey];
+        mapped = true;
+        console.log(`精确映射: "${finalTrackName}" + "${artist}" -> "${searchTrackName}"`);
+        break;
+      } else {
+        // 尝试部分匹配：检查所有可能的组合
+        for (const [key, chineseName] of Object.entries(englishToChineseMap)) {
+          const [engName, engArtist] = key.split('_');
+          
+          // 如果歌名匹配且艺术家部分匹配
+          if (engName === normalizedTrackName && 
+              (normalizedArtistName.includes(engArtist) || engArtist.includes(normalizedArtistName))) {
+            searchTrackName = chineseName;
+            mapped = true;
+            console.log(`部分匹配映射: "${finalTrackName}" + "${artist}" -> "${searchTrackName}"`);
+            break;
+          }
         }
       }
+      if (mapped) break;
     }
     
     if (!mapped) {
@@ -86,8 +94,8 @@ export default async function handler(req, res) {
     
     console.log('实际搜索歌名:', searchTrackName);
     
-    // 直接搜索 - 使用最简单的策略
-    const song = await directSearch(searchTrackName, finalArtistName);
+    // 使用所有艺术家进行搜索
+    const song = await directSearch(searchTrackName, processedArtists);
     
     if (!song) {
       return res.status(404).json({
@@ -130,6 +138,18 @@ export default async function handler(req, res) {
   }
 }
 
+// 预处理艺术家 - 处理多艺术家情况
+function preprocessArtists(artistName) {
+  // 分割多艺术家（支持逗号、&、和等分隔符）
+  const artists = artistName.split(/\s*,\s*|\s+&\s+|\s+和\s+/);
+  
+  // 过滤空值并去重
+  const uniqueArtists = [...new Set(artists.filter(artist => artist.trim()))];
+  
+  console.log(`艺术家预处理: "${artistName}" ->`, uniqueArtists);
+  return uniqueArtists;
+}
+
 // 预处理歌名 - 移除副标题和说明
 function preprocessTrackName(trackName) {
   // 移除常见的副标题和说明
@@ -158,6 +178,8 @@ function preprocessTrackName(trackName) {
     / - .*mix.*$/i,
     / \(from.*\)/gi,
     / \(official.*\)/gi,
+    / \(.*arcane.*\)/gi,
+    / \(.*league of legends.*\)/gi,
   ];
   
   let processed = trackName;
@@ -177,109 +199,105 @@ function preprocessTrackName(trackName) {
   return processed;
 }
 
-// 获取歌曲名称 - 修复 undefined 问题
-function getSongName(song) {
-  // 尝试多种可能的字段名
-  if (song.name) return song.name;
-  if (song.songname) return song.songname;
-  if (song.title) return song.title;
-  if (song.songName) return song.songName;
-  
-  // 如果都没有，检查原始数据结构
-  console.log('歌曲数据结构:', Object.keys(song));
-  return null;
-}
-
 // 直接搜索函数 - 专注于解决问题
-async function directSearch(trackName, artistName) {
-  // 针对长标题的特殊处理 - 修改为长度大于10就启用
+async function directSearch(trackName, artists) {
+  // 针对长标题的特殊处理
   if (trackName.length > 10) {
     console.log('检测到长标题，使用简化搜索');
-    return await searchLongTitle(trackName, artistName);
+    return await searchLongTitle(trackName, artists);
   }
   
-  // 正常搜索流程
-  const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(trackName + ' ' + artistName)}`;
-  console.log('搜索URL:', searchUrl);
+  // 使用所有艺术家进行搜索
+  const searchKeywords = [];
+  for (const artist of artists) {
+    searchKeywords.push(`${trackName} ${artist}`);
+  }
   
-  try {
-    const response = await axios.get(searchUrl);
-    const data = response.data;
+  // 尝试每个艺术家的组合
+  for (const keyword of searchKeywords) {
+    const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(keyword)}`;
+    console.log('搜索URL:', searchUrl);
     
-    console.log('搜索响应状态:', data?.code);
-    console.log('搜索结果数量:', data?.data?.length);
-    
-    if (data?.code === 200 && data.data?.length > 0) {
-      // 打印前几个结果的详细信息用于调试
-      data.data.slice(0, 3).forEach((song, index) => {
-        console.log(`结果 ${index + 1}:`, {
-          name: getSongName(song),
-          artist: extractArtists(song),
-          id: song.id
-        });
-      });
+    try {
+      const response = await axios.get(searchUrl);
+      const data = response.data;
       
-      return findBestMatch(data.data, trackName, artistName);
+      console.log('搜索响应状态:', data?.code);
+      console.log('搜索结果数量:', data?.data?.length);
+      
+      if (data?.code === 200 && data.data?.length > 0) {
+        // 打印前几个结果的详细信息用于调试
+        data.data.slice(0, 3).forEach((song, index) => {
+          console.log(`结果 ${index + 1}:`, {
+            name: getSongName(song),
+            artist: extractArtists(song),
+            id: song.id
+          });
+        });
+        
+        const match = findBestMatch(data.data, trackName, artists);
+        if (match) {
+          return match;
+        }
+      }
+    } catch (error) {
+      console.error('搜索请求失败:', error);
     }
-  } catch (error) {
-    console.error('搜索请求失败:', error);
   }
   
   return null;
 }
 
 // 专门处理长标题的搜索
-async function searchLongTitle(trackName, artistName) {
+async function searchLongTitle(trackName, artists) {
   console.log('原始标题长度:', trackName.length);
   console.log('原始标题:', trackName);
   
   // 尝试不同的搜索策略
   const strategies = [
-    // 策略1: 使用预处理后的歌名
+    // 策略1: 使用预处理后的歌名 + 所有艺术家
     () => {
       const processed = preprocessTrackName(trackName);
       console.log('策略1 - 预处理歌名:', processed);
-      return processed + ' ' + artistName;
+      const keywords = artists.map(artist => `${processed} ${artist}`);
+      return keywords;
     },
-    // 策略2: 只提取日文部分
+    // 策略2: 只使用核心歌名 + 所有艺术家
     () => {
-      const japanesePart = extractJapanesePart(trackName);
-      console.log('策略2 - 日文部分:', japanesePart);
-      return japanesePart + ' ' + artistName;
+      const coreName = extractCoreName(trackName);
+      console.log('策略2 - 核心歌名:', coreName);
+      const keywords = artists.map(artist => `${coreName} ${artist}`);
+      return keywords;
     },
-    // 策略3: 提取第一个部分（直到第一个分隔符）
+    // 策略3: 只搜索主要艺术家
     () => {
-      const firstPart = extractFirstPart(trackName);
-      console.log('策略3 - 第一部分:', firstPart);
-      return firstPart + ' ' + artistName;
+      console.log('策略3 - 只搜索主要艺术家:', artists[0]);
+      return [`${trackName} ${artists[0]}`];
     },
-    // 策略4: 只搜索艺术家（作为备选）
+    // 策略4: 只搜索艺术家
     () => {
-      console.log('策略4 - 只搜索艺术家:', artistName);
-      return artistName;
+      console.log('策略4 - 只搜索艺术家');
+      return artists;
     },
-    // 策略5: 使用核心关键词
-    () => {
-      const keywords = extractKeywords(trackName);
-      console.log('策略5 - 关键词:', keywords);
-      return keywords + ' ' + artistName;
-    }
   ];
   
   for (let i = 0; i < strategies.length; i++) {
     try {
-      const keyword = strategies[i]();
-      const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(keyword)}`;
-      console.log(`策略${i+1} 搜索URL:`, searchUrl);
+      const keywords = strategies[i]();
       
-      const response = await axios.get(searchUrl);
-      const data = response.data;
-      
-      if (data?.code === 200 && data.data?.length > 0) {
-        const match = findBestMatch(data.data, trackName, artistName);
-        if (match) {
-          console.log(`策略${i+1} 成功找到匹配`);
-          return match;
+      for (const keyword of keywords) {
+        const searchUrl = `https://api.vkeys.cn/v2/music/tencent/search/song?word=${encodeURIComponent(keyword)}`;
+        console.log(`策略${i+1} 搜索URL:`, searchUrl);
+        
+        const response = await axios.get(searchUrl);
+        const data = response.data;
+        
+        if (data?.code === 200 && data.data?.length > 0) {
+          const match = findBestMatch(data.data, trackName, artists);
+          if (match) {
+            console.log(`策略${i+1} 成功找到匹配`);
+            return match;
+          }
         }
       }
       
@@ -295,15 +313,28 @@ async function searchLongTitle(trackName, artistName) {
   return null;
 }
 
+// 提取核心歌名
+function extractCoreName(text) {
+  // 首先尝试预处理
+  const processed = preprocessTrackName(text);
+  if (processed.length < text.length) {
+    return processed;
+  }
+  
+  // 提取第一个有意义的部分
+  const parts = text.split(/[-\s–—|]/);
+  return parts[0] || text;
+}
+
 // 查找最佳匹配
-function findBestMatch(results, targetTrack, targetArtist) {
+function findBestMatch(results, targetTrack, artists) {
   console.log(`在 ${results.length} 个结果中查找最佳匹配`);
   
   let bestMatch = null;
   let bestScore = 0;
   
   for (const song of results) {
-    const score = calculateMatchScore(song, targetTrack, targetArtist);
+    const score = calculateMatchScore(song, targetTrack, artists);
     const songName = getSongName(song);
     const songArtists = extractArtists(song);
     
@@ -325,14 +356,13 @@ function findBestMatch(results, targetTrack, targetArtist) {
   return bestMatch;
 }
 
-// 计算匹配分数
-function calculateMatchScore(song, targetTrack, targetArtist) {
+// 计算匹配分数 - 支持多艺术家
+function calculateMatchScore(song, targetTrack, artists) {
   let score = 0;
   
   const songTitle = (getSongName(song) || '').toLowerCase();
   const songArtists = extractArtists(song).toLowerCase();
   const targetTrackLower = targetTrack.toLowerCase();
-  const targetArtistLower = targetArtist.toLowerCase();
   
   // 标题匹配
   if (songTitle === targetTrackLower) {
@@ -354,12 +384,12 @@ function calculateMatchScore(song, targetTrack, targetArtist) {
   }
   
   // 艺术家匹配 - 改进多艺术家处理
-  const targetArtists = targetArtistLower.split(/\s*,\s*|\s+&\s+/);
   const songArtistsArray = songArtists.split(/\s*,\s*|\s+&\s+/);
   
-  for (const targetArtist of targetArtists) {
+  for (const targetArtist of artists) {
+    const targetArtistLower = targetArtist.toLowerCase();
     for (const songArtist of songArtistsArray) {
-      if (songArtist.includes(targetArtist) || targetArtist.includes(songArtist)) {
+      if (songArtist.includes(targetArtistLower) || targetArtistLower.includes(songArtist)) {
         score += 30;
         break;
       }
@@ -367,6 +397,17 @@ function calculateMatchScore(song, targetTrack, targetArtist) {
   }
   
   return score;
+}
+
+// 获取歌曲名称 - 修复 undefined 问题
+function getSongName(song) {
+  // 尝试多种可能的字段名
+  if (song.name) return song.name;
+  if (song.songname) return song.songname;
+  if (song.title) return song.title;
+  if (song.songName) return song.songName;
+  
+  return null;
 }
 
 // 提取歌手信息 - 改进多艺术家处理
@@ -386,8 +427,6 @@ function extractArtists(song) {
     return String(song.singer);
   }
 }
-
-// 以下函数保持不变...
 
 // 提取日文部分
 function extractJapanesePart(text) {
@@ -500,3 +539,6 @@ function extractPlainLyrics(lyricContent) {
     .filter(line => line)
     .join('\n');
 }
+
+// 以下函数保持不变...
+// [其余函数保持不变，包括 extractAlbumName, calculateDuration, getLyrics, extractPlainLyrics 等]
