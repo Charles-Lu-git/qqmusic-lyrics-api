@@ -539,6 +539,3 @@ function extractPlainLyrics(lyricContent) {
     .filter(line => line)
     .join('\n');
 }
-
-// 以下函数保持不变...
-// [其余函数保持不变，包括 extractAlbumName, calculateDuration, getLyrics, extractPlainLyrics 等]
