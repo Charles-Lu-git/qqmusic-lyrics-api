@@ -76,7 +76,8 @@ export default async function handler(req, res) {
       duration: calculateDuration(song.interval),
       instrumental: !lyrics.syncedLyrics || lyrics.syncedLyrics.trim() === '',
       plainLyrics: lyrics.plainLyrics,
-      syncedLyrics: lyrics.syncedLyrics
+      syncedLyrics: lyrics.syncedLyrics,
+      yrcLyrics: lyrics.yrcLyrics // 新增 YRC 歌词字段
     };
     
     res.status(200).json(response);
@@ -286,9 +287,9 @@ function calculateSmartScore(song, targetTrack, artists, originalTrackName, orig
     titleScore = 100; // 完全匹配原始歌名 - 最高分
   } else if (songTitle === targetTrackLower) {
     titleScore = 90; // 完全匹配预处理歌名
-  } else if (isCloseMatch(songTitle, originalTrackNameLower)) {
+  } else if (isCloseMatch(songTitle, originalTrackNameLower) {
     titleScore = 80; // 接近匹配原始歌名
-  } else if (isCloseMatch(songTitle, targetTrackLower)) {
+  } else if (isCloseMatch(songTitle, targetTrackLower) {
     titleScore = 70; // 接近匹配预处理歌名
   } else if (songTitle.includes(originalTrackNameLower) && originalTrackNameLower.length > 3) {
     titleScore = 60; // 包含原始歌名
@@ -438,7 +439,7 @@ function calculateDuration(interval) {
   return 0;
 }
 
-// 获取歌词
+// 获取歌词（修改此函数以获取 YRC 歌词）
 async function getLyrics(songId) {
   try {
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${songId}`;
@@ -447,17 +448,29 @@ async function getLyrics(songId) {
     
     let syncedLyrics = '';
     let plainLyrics = '';
+    let yrcLyrics = ''; // 新增 YRC 歌词变量
     
-    if (data?.code === 200 && data.data?.lrc) {
-      syncedLyrics = data.data.lrc;
-      plainLyrics = extractPlainLyrics(syncedLyrics);
+    if (data?.code === 200 && data.data) {
+      // 获取 LRC 歌词
+      if (data.data.lrc) {
+        syncedLyrics = data.data.lrc;
+        plainLyrics = extractPlainLyrics(syncedLyrics);
+      }
+      
+      // 获取 YRC 歌词
+      if (data.data.yrc) {
+        yrcLyrics = data.data.yrc;
+        console.log('成功获取 YRC 歌词');
+      } else {
+        console.log('未找到 YRC 歌词');
+      }
     }
     
-    return { syncedLyrics, plainLyrics };
+    return { syncedLyrics, plainLyrics, yrcLyrics };
     
   } catch (error) {
     console.error('获取歌词失败:', error);
-    return { syncedLyrics: '', plainLyrics: '' };
+    return { syncedLyrics: '', plainLyrics: '', yrcLyrics: '' };
   }
 }
 
