@@ -287,9 +287,9 @@ function calculateSmartScore(song, targetTrack, artists, originalTrackName, orig
     titleScore = 100; // 完全匹配原始歌名 - 最高分
   } else if (songTitle === targetTrackLower) {
     titleScore = 90; // 完全匹配预处理歌名
-  } else if (isCloseMatch(songTitle, originalTrackNameLower) {
+  } else if (isCloseMatch(songTitle, originalTrackNameLower)) {
     titleScore = 80; // 接近匹配原始歌名
-  } else if (isCloseMatch(songTitle, targetTrackLower) {
+  } else if (isCloseMatch(songTitle, targetTrackLower)) {
     titleScore = 70; // 接近匹配预处理歌名
   } else if (songTitle.includes(originalTrackNameLower) && originalTrackNameLower.length > 3) {
     titleScore = 60; // 包含原始歌名
