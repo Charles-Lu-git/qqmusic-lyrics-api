@@ -77,8 +77,7 @@ export default async function handler(req, res) {
       instrumental: !lyrics.syncedLyrics || lyrics.syncedLyrics.trim() === '',
       plainLyrics: lyrics.plainLyrics,
       syncedLyrics: lyrics.syncedLyrics,
-      yrcLyrics: lyrics.yrcLyrics,
-      translatedLyrics: lyrics.translatedLyrics // 新增翻译歌词字段
+      translatedLyrics: lyrics.translatedLyrics
     };
     
     res.status(200).json(response);
@@ -440,7 +439,7 @@ function calculateDuration(interval) {
   return 0;
 }
 
-// 获取歌词（修改此函数以获取 YRC 歌词和翻译歌词）
+// 获取歌词（只保留 LRC 和翻译歌词，并移除制作人信息）
 async function getLyrics(songId) {
   try {
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${songId}`;
@@ -449,39 +448,74 @@ async function getLyrics(songId) {
     
     let syncedLyrics = '';
     let plainLyrics = '';
-    let yrcLyrics = '';
-    let translatedLyrics = ''; // 新增翻译歌词变量
+    let translatedLyrics = '';
     
     if (data?.code === 200 && data.data) {
-      // 获取 LRC 歌词
+      // 获取 LRC 歌词并移除制作人信息
       if (data.data.lrc) {
-        syncedLyrics = data.data.lrc;
+        syncedLyrics = removeCredits(data.data.lrc);
         plainLyrics = extractPlainLyrics(syncedLyrics);
       }
       
-      // 获取 YRC 歌词
-      if (data.data.yrc) {
-        yrcLyrics = data.data.yrc;
-        console.log('成功获取 YRC 歌词');
-      } else {
-        console.log('未找到 YRC 歌词');
-      }
-      
-      // 获取翻译歌词
+      // 获取翻译歌词并移除制作人信息
       if (data.data.trans) {
-        translatedLyrics = data.data.trans;
+        translatedLyrics = removeCredits(data.data.trans);
         console.log('成功获取翻译歌词');
       } else {
         console.log('未找到翻译歌词');
       }
     }
     
-    return { syncedLyrics, plainLyrics, yrcLyrics, translatedLyrics };
+    return { syncedLyrics, plainLyrics, translatedLyrics };
     
   } catch (error) {
     console.error('获取歌词失败:', error);
-    return { syncedLyrics: '', plainLyrics: '', yrcLyrics: '', translatedLyrics: '' };
+    return { 
+      syncedLyrics: '', 
+      plainLyrics: '', 
+      translatedLyrics: ''
+    };
   }
+}
+
+// 移除制作人信息
+function removeCredits(lyricContent) {
+  if (!lyricContent) return '';
+  
+  // 常见的制作人信息关键词
+  const creditPatterns = [
+    /^\[.*(词|作词| lyric|lyrics|words?|writer).*:.*\].*$/gmi,
+    /^\[.*(曲|作曲| compose|composer|music).*:.*\].*$/gmi,
+    /^\[.*(编曲| arrange|arranger).*:.*\].*$/gmi,
+    /^\[.*(制作| produce|producer).*:.*\].*$/gmi,
+    /^\[.*(混音| mix|mixer).*:.*\].*$/gmi,
+    /^\[.*(录音| record|recording).*:.*\].*$/gmi,
+    /^\[.*(演奏| perform|performer).*:.*\].*$/gmi,
+    /^\[.*(和声| chorus|backing vocal).*:.*\].*$/gmi,
+    /^\[.*(吉他| guitar|guitarist).*:.*\].*$/gmi,
+    /^\[.*(贝斯| bass|bassist).*:.*\].*$/gmi,
+    /^\[.*(鼓| drum|drummer).*:.*\].*$/gmi,
+    /^\[.*(钢琴| piano|pianist).*:.*\].*$/gmi,
+    /^\[.*(弦乐| string|strings).*:.*\].*$/gmi,
+    /^\[.*(监制| director|supervisor).*:.*\].*$/gmi,
+    /^QQ音乐享有本翻译作品的著作权$/gm,
+    /^\/\/$/gm
+  ];
+  
+  let cleanedLyrics = lyricContent;
+  
+  // 移除制作人信息行
+  creditPatterns.forEach(pattern => {
+    cleanedLyrics = cleanedLyrics.replace(pattern, '');
+  });
+  
+  // 移除空行
+  cleanedLyrics = cleanedLyrics
+    .split('\n')
+    .filter(line => line.trim() !== '')
+    .join('\n');
+  
+  return cleanedLyrics;
 }
 
 // 从LRC歌词中提取纯文本
