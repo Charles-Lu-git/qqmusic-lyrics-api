@@ -439,7 +439,7 @@ function calculateDuration(interval) {
   return 0;
 }
 
-// 获取歌词（只保留 LRC 和翻译歌词，并移除制作人信息）
+// 获取歌词（只保留 LRC 和翻译歌词，不进行任何清理）
 async function getLyrics(songId) {
   try {
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${songId}`;
@@ -451,15 +451,15 @@ async function getLyrics(songId) {
     let translatedLyrics = '';
     
     if (data?.code === 200 && data.data) {
-      // 获取 LRC 歌词并移除制作人信息
+      // 获取原始 LRC 歌词，不进行清理
       if (data.data.lrc) {
-        syncedLyrics = removeCredits(data.data.lrc);
+        syncedLyrics = data.data.lrc;
         plainLyrics = extractPlainLyrics(syncedLyrics);
       }
       
-      // 获取翻译歌词并移除制作人信息
+      // 获取原始翻译歌词，不进行清理
       if (data.data.trans) {
-        translatedLyrics = removeCredits(data.data.trans);
+        translatedLyrics = data.data.trans;
         console.log('成功获取翻译歌词');
       } else {
         console.log('未找到翻译歌词');
@@ -476,46 +476,6 @@ async function getLyrics(songId) {
       translatedLyrics: ''
     };
   }
-}
-
-// 移除制作人信息
-function removeCredits(lyricContent) {
-  if (!lyricContent) return '';
-  
-  // 常见的制作人信息关键词
-  const creditPatterns = [
-    /^\[.*(词|作词| lyric|lyrics|words?|writer).*:.*\].*$/gmi,
-    /^\[.*(曲|作曲| compose|composer|music).*:.*\].*$/gmi,
-    /^\[.*(编曲| arrange|arranger).*:.*\].*$/gmi,
-    /^\[.*(制作| produce|producer).*:.*\].*$/gmi,
-    /^\[.*(混音| mix|mixer).*:.*\].*$/gmi,
-    /^\[.*(录音| record|recording).*:.*\].*$/gmi,
-    /^\[.*(演奏| perform|performer).*:.*\].*$/gmi,
-    /^\[.*(和声| chorus|backing vocal).*:.*\].*$/gmi,
-    /^\[.*(吉他| guitar|guitarist).*:.*\].*$/gmi,
-    /^\[.*(贝斯| bass|bassist).*:.*\].*$/gmi,
-    /^\[.*(鼓| drum|drummer).*:.*\].*$/gmi,
-    /^\[.*(钢琴| piano|pianist).*:.*\].*$/gmi,
-    /^\[.*(弦乐| string|strings).*:.*\].*$/gmi,
-    /^\[.*(监制| director|supervisor).*:.*\].*$/gmi,
-    /^QQ音乐享有本翻译作品的著作权$/gm,
-    /^\/\/$/gm
-  ];
-  
-  let cleanedLyrics = lyricContent;
-  
-  // 移除制作人信息行
-  creditPatterns.forEach(pattern => {
-    cleanedLyrics = cleanedLyrics.replace(pattern, '');
-  });
-  
-  // 移除空行
-  cleanedLyrics = cleanedLyrics
-    .split('\n')
-    .filter(line => line.trim() !== '')
-    .join('\n');
-  
-  return cleanedLyrics;
 }
 
 // 从LRC歌词中提取纯文本
