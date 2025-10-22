@@ -439,7 +439,7 @@ function calculateDuration(interval) {
   return 0;
 }
 
-// 获取歌词（只保留 LRC 和翻译歌词，不进行任何清理）
+// 获取歌词（只保留 LRC 和翻译歌词，移除非歌词内容但保留[ti]和[ar]标签）
 async function getLyrics(songId) {
   try {
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${songId}`;
@@ -451,15 +451,15 @@ async function getLyrics(songId) {
     let translatedLyrics = '';
     
     if (data?.code === 200 && data.data) {
-      // 获取原始 LRC 歌词，不进行清理
+      // 获取原始 LRC 歌词，并移除非歌词内容但保留[ti]和[ar]标签
       if (data.data.lrc) {
-        syncedLyrics = data.data.lrc;
+        syncedLyrics = removeNonLyricContent(data.data.lrc);
         plainLyrics = extractPlainLyrics(syncedLyrics);
       }
       
-      // 获取原始翻译歌词，不进行清理
+      // 获取原始翻译歌词，并移除非歌词内容但保留[ti]和[ar]标签
       if (data.data.trans) {
-        translatedLyrics = data.data.trans;
+        translatedLyrics = removeNonLyricContent(data.data.trans);
         console.log('成功获取翻译歌词');
       } else {
         console.log('未找到翻译歌词');
@@ -476,6 +476,34 @@ async function getLyrics(songId) {
       translatedLyrics: ''
     };
   }
+}
+
+// 移除非歌词内容但保留[ti]和[ar]标签
+function removeNonLyricContent(lyricContent) {
+  if (!lyricContent) return '';
+  
+  return lyricContent
+    .split('\n')
+    .filter(line => {
+      const trimmedLine = line.trim();
+      
+      // 移除空行
+      if (trimmedLine === '') return false;
+      
+      // 保留[ti]和[ar]标签
+      if (/^\[(ti|ar):.*\]$/.test(trimmedLine)) {
+        return true;
+      }
+      
+      // 移除其他歌曲信息标签行（如 [al:...], [by:...], [offset:...] 等）
+      if (/^\[(al|by|offset|t_time|kana|lang|total):.*\]$/.test(trimmedLine)) {
+        return false;
+      }
+      
+      // 保留时间轴和歌词行（如 [00:00.00] 歌词内容）
+      return true;
+    })
+    .join('\n');
 }
 
 // 从LRC歌词中提取纯文本
