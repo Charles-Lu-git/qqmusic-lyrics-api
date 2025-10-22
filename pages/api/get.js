@@ -478,7 +478,7 @@ async function getLyrics(songId) {
   }
 }
 
-// 移除非歌词内容但保留[ti]和[ar]标签
+// 移除非歌词内容但保留[ti]和[ar]标签，并移除只有时间轴的空行
 function removeNonLyricContent(lyricContent) {
   if (!lyricContent) return '';
   
@@ -497,6 +497,57 @@ function removeNonLyricContent(lyricContent) {
       
       // 移除其他歌曲信息标签行（如 [al:...], [by:...], [offset:...] 等）
       if (/^\[(al|by|offset|t_time|kana|lang|total):.*\]$/.test(trimmedLine)) {
+        return false;
+      }
+      
+      // 检查是否是只有时间轴的空行（如 [00:48.44]）
+      if (/^\[\d+:\d+(\.\d+)?\]$/.test(trimmedLine)) {
+        return false;
+      }
+      
+      // 检查是否是只有时间轴和空内容的行（如 [00:48.44]  后面可能有空格）
+      if (/^\[\d+:\d+(\.\d+)?\]\s*$/.test(trimmedLine)) {
+        return false;
+      }
+      
+      // 保留时间轴和歌词行（如 [00:00.00] 歌词内容）
+      return true;
+    })
+    .join('\n');
+}
+
+// 移除非歌词内容但保留[ti]和[ar]标签，并移除"//"行和只有时间轴的空行
+function removeNonLyricContentAndSlashLines(lyricContent) {
+  if (!lyricContent) return '';
+  
+  return lyricContent
+    .split('\n')
+    .filter(line => {
+      const trimmedLine = line.trim();
+      
+      // 移除空行
+      if (trimmedLine === '') return false;
+      
+      // 移除只包含"//"的行
+      if (trimmedLine === '//') return false;
+      
+      // 保留[ti]和[ar]标签
+      if (/^\[(ti|ar):.*\]$/.test(trimmedLine)) {
+        return true;
+      }
+      
+      // 移除其他歌曲信息标签行（如 [al:...], [by:...], [offset:...] 等）
+      if (/^\[(al|by|offset|t_time|kana|lang|total):.*\]$/.test(trimmedLine)) {
+        return false;
+      }
+      
+      // 检查是否是只有时间轴的空行（如 [00:48.44]）
+      if (/^\[\d+:\d+(\.\d+)?\]$/.test(trimmedLine)) {
+        return false;
+      }
+      
+      // 检查是否是只有时间轴和空内容的行（如 [00:48.44]  后面可能有空格）
+      if (/^\[\d+:\d+(\.\d+)?\]\s*$/.test(trimmedLine)) {
         return false;
       }
       
