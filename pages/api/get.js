@@ -78,8 +78,7 @@ export default async function handler(req, res) {
       plainLyrics: lyrics.plainLyrics,
       syncedLyrics: lyrics.syncedLyrics,
       yrcLyrics: lyrics.yrcLyrics,
-      translatedLyrics: lyrics.translatedLyrics,
-      romaLyrics: lyrics.romaLyrics // 新增罗马音歌词字段
+      translatedLyrics: lyrics.translatedLyrics // 新增翻译歌词字段
     };
     
     res.status(200).json(response);
@@ -441,7 +440,7 @@ function calculateDuration(interval) {
   return 0;
 }
 
-// 获取歌词（修改此函数以获取 YRC 歌词、翻译歌词和罗马音歌词）
+// 获取歌词（修改此函数以获取 YRC 歌词和翻译歌词）
 async function getLyrics(songId) {
   try {
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${songId}`;
@@ -451,8 +450,7 @@ async function getLyrics(songId) {
     let syncedLyrics = '';
     let plainLyrics = '';
     let yrcLyrics = '';
-    let translatedLyrics = '';
-    let romaLyrics = ''; // 新增罗马音歌词变量
+    let translatedLyrics = ''; // 新增翻译歌词变量
     
     if (data?.code === 200 && data.data) {
       // 获取 LRC 歌词
@@ -476,27 +474,13 @@ async function getLyrics(songId) {
       } else {
         console.log('未找到翻译歌词');
       }
-      
-      // 获取罗马音歌词
-      if (data.data.roma) {
-        romaLyrics = data.data.roma;
-        console.log('成功获取罗马音歌词');
-      } else {
-        console.log('未找到罗马音歌词');
-      }
     }
     
-    return { syncedLyrics, plainLyrics, yrcLyrics, translatedLyrics, romaLyrics };
+    return { syncedLyrics, plainLyrics, yrcLyrics, translatedLyrics };
     
   } catch (error) {
     console.error('获取歌词失败:', error);
-    return { 
-      syncedLyrics: '', 
-      plainLyrics: '', 
-      yrcLyrics: '', 
-      translatedLyrics: '', 
-      romaLyrics: '' 
-    };
+    return { syncedLyrics: '', plainLyrics: '', yrcLyrics: '', translatedLyrics: '' };
   }
 }
 
