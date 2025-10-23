@@ -459,7 +459,7 @@ async function getLyrics(songId) {
       
       // 获取原始翻译歌词，并移除非歌词内容但保留[ti]和[ar]标签
       if (data.data.trans) {
-        translatedLyrics = removeNonLyricContent(data.data.trans); // 修复：使用同一个函数处理
+        translatedLyrics = removeNonLyricContent(data.data.trans);
         console.log('成功获取翻译歌词');
       } else {
         console.log('未找到翻译歌词');
@@ -478,7 +478,7 @@ async function getLyrics(songId) {
   }
 }
 
-// 移除非歌词内容但保留[ti]和[ar]标签，并移除只有时间轴的空行和"//"行
+// 移除非歌词内容但保留[ti]和[ar]标签，并移除只有时间轴的空行、"//"行和版权声明行
 function removeNonLyricContent(lyricContent) {
   if (!lyricContent) return '';
   
@@ -492,6 +492,16 @@ function removeNonLyricContent(lyricContent) {
       
       // 移除只包含"//"的行
       if (trimmedLine === '//') return false;
+      
+      // 移除包含时间轴后面只有"//"的行（如 [00:00.00]//）
+      if (/^\[\d+:\d+(\.\d+)?\]\s*\/\/\s*$/.test(trimmedLine)) {
+        return false;
+      }
+      
+      // 移除版权声明行（如 [00:00.00]TME享有本翻译作品的著作权）
+      if (/^\[\d+:\d+(\.\d+)?\]\s*(TME|QQ音乐)享有本翻译作品的著作权\s*$/.test(trimmedLine)) {
+        return false;
+      }
       
       // 保留[ti]和[ar]标签
       if (/^\[(ti|ar):.*\]$/.test(trimmedLine)) {
