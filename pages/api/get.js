@@ -1,3 +1,4 @@
+get.js
 import axios from 'axios';
 
 // 中英文歌名映射表
@@ -77,8 +78,7 @@ export default async function handler(req, res) {
       instrumental: !lyrics.syncedLyrics || lyrics.syncedLyrics.trim() === '',
       plainLyrics: lyrics.plainLyrics,
       syncedLyrics: lyrics.syncedLyrics,
-      translatedLyrics: lyrics.translatedLyrics,
-      yrcLyrics: lyrics.yrcLyrics  // 新增 YRC 歌词字段
+      translatedLyrics: lyrics.translatedLyrics
     };
     
     res.status(200).json(response);
@@ -440,7 +440,7 @@ function calculateDuration(interval) {
   return 0;
 }
 
-// 获取歌词（保留 LRC、翻译歌词和 YRC 逐字歌词）
+// 获取歌词（只保留 LRC 和翻译歌词，移除非歌词内容但保留[ti]和[ar]标签）
 async function getLyrics(songId) {
   try {
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${songId}`;
@@ -450,7 +450,6 @@ async function getLyrics(songId) {
     let syncedLyrics = '';
     let plainLyrics = '';
     let translatedLyrics = '';
-    let yrcLyrics = '';  // 新增 YRC 歌词变量
     
     if (data?.code === 200 && data.data) {
       // 获取原始 LRC 歌词，并移除非歌词内容但保留[ti]和[ar]标签
@@ -466,30 +465,16 @@ async function getLyrics(songId) {
       } else {
         console.log('未找到翻译歌词');
       }
-      
-      // 获取原始 YRC 逐字歌词，并移除非歌词内容但保留[ti]和[ar]标签
-      if (data.data.yrc) {
-        yrcLyrics = removeNonLyricContent(data.data.yrc);
-        console.log('成功获取 YRC 逐字歌词');
-      } else {
-        console.log('未找到 YRC 逐字歌词');
-      }
     }
     
-    return { 
-      syncedLyrics, 
-      plainLyrics, 
-      translatedLyrics,
-      yrcLyrics  // 返回 YRC 歌词
-    };
+    return { syncedLyrics, plainLyrics, translatedLyrics };
     
   } catch (error) {
     console.error('获取歌词失败:', error);
     return { 
       syncedLyrics: '', 
       plainLyrics: '', 
-      translatedLyrics: '',
-      yrcLyrics: ''  // 错误时返回空字符串
+      translatedLyrics: ''
     };
   }
 }
