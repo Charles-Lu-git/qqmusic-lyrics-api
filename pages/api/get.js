@@ -1,4 +1,3 @@
-get.js
 import axios from 'axios';
 
 // 中英文歌名映射表
@@ -9,20 +8,34 @@ const englishToChineseMap = {
   'dong_动力火车': '当',
 };
 
+// 歌名清理模式
+const trackNamePatterns = [
+  / - genshin impact's.*$/i,
+  / - .*anniversary.*$/i,
+  / - .*theme song.*$/i,
+  / - .*version.*$/i,
+  / - 《.*?》.*$/,
+  / - .*动画.*$/,
+  / - .*主题曲.*$/,
+  /\(.*?\)/g,
+  / - from the.*$/i,
+  / - official.*$/i,
+  / \(from.*\)/gi,
+  / - remastered.*$/i,
+  / - .*mix.*$/i,
+  /《(.*?)》/g,
+  /---/g,
+  /———/g,
+];
+
 export default async function handler(req, res) {
   // CORS 设置
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-  
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
   
   const { track_name, artist_name, trackName, artistName } = req.query;
   const finalTrackName = trackName || track_name;
@@ -38,48 +51,22 @@ export default async function handler(req, res) {
   try {
     console.log('搜索请求:', { trackName: finalTrackName, artistName: finalArtistName });
     
-    // 预处理
+    // 预处理和搜索
     const processedTrackName = preprocessTrackName(finalTrackName);
     const processedArtists = preprocessArtists(finalArtistName);
-    
-    // 检查映射
-    let searchTrackName = processedTrackName;
-    for (const artist of processedArtists) {
-      const key = `${processedTrackName.toLowerCase()}_${artist.toLowerCase()}`;
-      if (englishToChineseMap[key]) {
-        searchTrackName = englishToChineseMap[key];
-        console.log(`映射: "${finalTrackName}" -> "${searchTrackName}"`);
-        break;
-      }
-    }
+    const searchTrackName = getMappedTrackName(processedTrackName, processedArtists);
     
     console.log('实际搜索:', searchTrackName);
     
-    // 搜索
+    // 搜索歌曲
     const song = await searchSong(searchTrackName, processedArtists, finalTrackName, finalArtistName);
-    
-    if (!song) {
-      return res.status(404).json({ error: 'Song not found', message: '未找到匹配的歌曲' });
-    }
+    if (!song) return res.status(404).json({ error: 'Song not found', message: '未找到匹配的歌曲' });
     
     console.log('找到歌曲:', { name: getSongName(song), artist: extractArtists(song), id: song.id });
     
-    // 获取歌词
+    // 获取歌词并返回结果
     const lyrics = await getLyrics(song.id);
-    
-    // 返回结果
-    const response = {
-      id: song.id,
-      name: getSongName(song) || finalTrackName,
-      trackName: getSongName(song) || finalTrackName,
-      artistName: extractArtists(song),
-      albumName: extractAlbumName(song),
-      duration: calculateDuration(song.interval),
-      instrumental: !lyrics.syncedLyrics || lyrics.syncedLyrics.trim() === '',
-      plainLyrics: lyrics.plainLyrics,
-      syncedLyrics: lyrics.syncedLyrics,
-      translatedLyrics: lyrics.translatedLyrics
-    };
+    const response = buildResponse(song, lyrics, finalTrackName);
     
     res.status(200).json(response);
     
@@ -89,49 +76,33 @@ export default async function handler(req, res) {
   }
 }
 
-// 预处理艺术家
+// 核心函数
 function preprocessArtists(artistName) {
   const artists = artistName.split(/\s*,\s*|\s+&\s+|\s+和\s+/);
   return [...new Set(artists.filter(artist => artist.trim()))];
 }
 
-// 预处理歌名
 function preprocessTrackName(trackName) {
-  const patterns = [
-    / - genshin impact's.*$/i,
-    / - .*anniversary.*$/i,
-    / - .*theme song.*$/i,
-    / - .*japanese.*$/i,
-    / - .*version.*$/i,
-    / - 《.*?》.*$/,
-    / - .*动画.*$/,
-    / - .*剧集.*$/,
-    / - .*主题曲.*$/,
-    /\(.*?\)/g,
-    / - from the.*$/i,
-    / - official.*$/i,
-    / \(from.*\)/gi,
-    / - remastered.*$/i,
-    / - .*mix.*$/i,
-    / - .*edit.*$/i,
-    /《(.*?)》/g,
-    /---/g,
-    /———/g,
-    / - $/,
-  ];
-  
   let processed = trackName;
-  for (const pattern of patterns) {
+  for (const pattern of trackNamePatterns) {
     processed = processed.replace(pattern, '');
   }
-  
   processed = processed.replace(/\s+/g, ' ').replace(/[-\s]+$/g, '').trim();
   return processed || trackName.split(/[-\s–—]/)[0].trim();
 }
 
-// 搜索歌曲
+function getMappedTrackName(trackName, artists) {
+  for (const artist of artists) {
+    const key = `${trackName.toLowerCase()}_${artist.toLowerCase()}`;
+    if (englishToChineseMap[key]) {
+      console.log(`映射: "${trackName}" -> "${englishToChineseMap[key]}"`);
+      return englishToChineseMap[key];
+    }
+  }
+  return trackName;
+}
+
 async function searchSong(trackName, artists, originalTrackName, originalArtistName) {
-  // 判断是否需要简化搜索
   const shouldSimplify = trackName.length > 30 || 
     / - | – | — |\(|\)|《|》|动画|剧集|主题曲|anniversary|theme song|version|remastered|mix|edit|致.*先生|———/i.test(trackName);
   
@@ -161,19 +132,10 @@ async function searchSong(trackName, artists, originalTrackName, originalArtistN
   return null;
 }
 
-// 简化搜索
 async function simplifiedSearch(trackName, artists, originalTrackName, originalArtistName) {
   const strategies = [
-    // 策略1: 核心歌名 + 艺术家
-    () => {
-      const coreName = extractCoreName(trackName);
-      return artists.map(artist => `${coreName} ${artist}`);
-    },
-    // 策略2: 预处理歌名 + 艺术家
-    () => {
-      const processed = preprocessTrackName(trackName);
-      return artists.map(artist => `${processed} ${artist}`);
-    },
+    () => artists.map(artist => `${extractCoreName(trackName)} ${artist}`),
+    () => artists.map(artist => `${preprocessTrackName(trackName)} ${artist}`),
   ];
   
   for (let i = 0; i < strategies.length; i++) {
@@ -205,7 +167,6 @@ async function simplifiedSearch(trackName, artists, originalTrackName, originalA
   return null;
 }
 
-// 提取核心歌名
 function extractCoreName(text) {
   const isEnglish = /^[a-zA-Z\s.,!?'"-]+$/.test(text);
   if (isEnglish) {
@@ -220,13 +181,12 @@ function extractCoreName(text) {
   return processed && processed.length < text.length ? processed : text.split(/[-\s–—|]/)[0] || text;
 }
 
-// 查找最佳匹配
 function findBestMatch(results, targetTrack, artists, originalTrackName, originalArtistName) {
-  // 先尝试精确匹配（歌曲名和艺术家都匹配）
+  // 先尝试精确匹配
   const exactMatch = findExactMatch(results, originalTrackName, originalArtistName);
   if (exactMatch) return exactMatch;
   
-  // 使用更智能的评分系统
+  // 智能评分匹配
   let bestMatch = null;
   let bestScore = 0;
   
@@ -245,7 +205,6 @@ function findBestMatch(results, targetTrack, artists, originalTrackName, origina
   return bestMatch || (results.length > 0 ? results[0] : null);
 }
 
-// 精确匹配 - 要求歌曲名和艺术家都匹配
 function findExactMatch(results, originalTrackName, originalArtistName) {
   const trackLower = originalTrackName.toLowerCase();
   const artistLower = originalArtistName.toLowerCase();
@@ -258,7 +217,6 @@ function findExactMatch(results, originalTrackName, originalArtistName) {
       const songNameLower = songName.toLowerCase();
       const songArtistsLower = songArtists.toLowerCase();
       
-      // 要求歌曲名和艺术家都完全匹配
       if (songNameLower === trackLower && songArtistsLower === artistLower) {
         console.log(`完全精确匹配: "${songName}" - "${songArtists}"`);
         return song;
@@ -269,7 +227,6 @@ function findExactMatch(results, originalTrackName, originalArtistName) {
   return null;
 }
 
-// 更智能的评分系统
 function calculateSmartScore(song, targetTrack, artists, originalTrackName, originalArtistName) {
   const songName = getSongName(song);
   if (!songName) return 0;
@@ -280,123 +237,97 @@ function calculateSmartScore(song, targetTrack, artists, originalTrackName, orig
   const originalTrackNameLower = originalTrackName.toLowerCase();
   const originalArtistNameLower = originalArtistName.toLowerCase();
   
-  let titleScore = 0;
-  let artistScore = 0;
+  let titleScore = calculateTitleScore(songTitle, targetTrackLower, originalTrackNameLower);
+  let artistScore = calculateArtistScore(songArtists, artists, originalArtistNameLower);
   
-  // 计算歌曲名匹配分数 - 更智能的匹配
-  if (songTitle === originalTrackNameLower) {
-    titleScore = 100; // 完全匹配原始歌名 - 最高分
-  } else if (songTitle === targetTrackLower) {
-    titleScore = 90; // 完全匹配预处理歌名
-  } else if (isCloseMatch(songTitle, originalTrackNameLower)) {
-    titleScore = 80; // 接近匹配原始歌名
-  } else if (isCloseMatch(songTitle, targetTrackLower)) {
-    titleScore = 70; // 接近匹配预处理歌名
-  } else if (songTitle.includes(originalTrackNameLower) && originalTrackNameLower.length > 3) {
-    titleScore = 60; // 包含原始歌名
-  } else if (originalTrackNameLower.includes(songTitle) && songTitle.length > 3) {
-    titleScore = 50; // 被原始歌名包含
-  } else if (songTitle.includes(targetTrackLower) && targetTrackLower.length > 3) {
-    titleScore = 40; // 包含预处理歌名
-  } else if (targetTrackLower.includes(songTitle) && songTitle.length > 3) {
-    titleScore = 30; // 被预处理歌名包含
-  }
+  // 动态权重计算
+  let { titleWeight, artistWeight } = calculateWeights(titleScore, artistScore);
+  let totalScore = (titleScore * titleWeight) + (artistScore * artistWeight);
   
-  // 计算艺术家匹配分数
+  // 特殊情况加分
+  if (songTitle === originalTrackNameLower) totalScore = Math.max(totalScore, 95);
+  if (titleScore >= 70 && artistScore >= 80) totalScore += 15;
+  if (artistScore === 100 && titleScore >= 40) totalScore += 10;
+  
+  return totalScore;
+}
+
+function calculateTitleScore(songTitle, targetTrack, originalTrackName) {
+  if (songTitle === originalTrackName) return 100;
+  if (songTitle === targetTrack) return 90;
+  if (isCloseMatch(songTitle, originalTrackName)) return 80;
+  if (isCloseMatch(songTitle, targetTrack)) return 70;
+  if (songTitle.includes(originalTrackName) && originalTrackName.length > 3) return 60;
+  if (originalTrackName.includes(songTitle) && songTitle.length > 3) return 50;
+  if (songTitle.includes(targetTrack) && targetTrack.length > 3) return 40;
+  if (targetTrack.includes(songTitle) && songTitle.length > 3) return 30;
+  return 0;
+}
+
+function calculateArtistScore(songArtists, targetArtists, originalArtistName) {
   const songArtistsArray = songArtists.split(/\s*,\s*|\s+&\s+/);
+  let maxScore = 0;
   
-  for (const targetArtist of artists) {
+  for (const targetArtist of targetArtists) {
     const targetArtistLower = targetArtist.toLowerCase();
     
     for (const songArtist of songArtistsArray) {
-      if (songArtist === originalArtistNameLower) {
-        artistScore = Math.max(artistScore, 100); // 完全匹配原始艺术家名
+      if (songArtist === originalArtistName) {
+        maxScore = Math.max(maxScore, 100);
         break;
       } else if (songArtist === targetArtistLower) {
-        artistScore = Math.max(artistScore, 80); // 完全匹配预处理艺术家名
+        maxScore = Math.max(maxScore, 80);
         break;
-      } else if (songArtist.includes(originalArtistNameLower) || originalArtistNameLower.includes(songArtist)) {
-        artistScore = Math.max(artistScore, 60); // 部分匹配原始艺术家名
+      } else if (songArtist.includes(originalArtistName) || originalArtistName.includes(songArtist)) {
+        maxScore = Math.max(maxScore, 60);
         break;
       } else if (songArtist.includes(targetArtistLower) || targetArtistLower.includes(songArtist)) {
-        artistScore = Math.max(artistScore, 40); // 部分匹配预处理艺术家名
+        maxScore = Math.max(maxScore, 40);
         break;
       }
     }
   }
   
-  // 计算综合分数 - 使用动态权重
+  return maxScore;
+}
+
+function calculateWeights(titleScore, artistScore) {
   let titleWeight = 0.6;
   let artistWeight = 0.4;
   
-  // 如果艺术家完全匹配但歌曲名部分匹配，增加艺术家权重
   if (artistScore >= 80 && titleScore >= 40) {
     titleWeight = 0.4;
     artistWeight = 0.6;
   }
   
-  // 如果歌曲名完全匹配但艺术家部分匹配，增加歌曲名权重
   if (titleScore >= 90 && artistScore >= 40) {
     titleWeight = 0.8;
     artistWeight = 0.2;
   }
   
-  let totalScore = (titleScore * titleWeight) + (artistScore * artistWeight);
-  
-  // 特殊情况处理
-  // 如果歌曲名完全匹配原始歌名，给予最高优先级
-  if (songTitle === originalTrackNameLower) {
-    totalScore = Math.max(totalScore, 95);
-  }
-  
-  // 如果歌曲名和艺术家都匹配得很好，给予额外奖励
-  if (titleScore >= 70 && artistScore >= 80) {
-    totalScore += 15;
-  }
-  
-  // 如果艺术家完全匹配但歌曲名部分匹配，给予中等奖励
-  if (artistScore === 100 && titleScore >= 40) {
-    totalScore += 10;
-  }
-  
-  return totalScore;
+  return { titleWeight, artistWeight };
 }
 
-// 判断是否为接近匹配
 function isCloseMatch(songTitle, targetTitle) {
-  // 移除常见修饰词
   const cleanSong = songTitle.replace(/\(.*?\)| - .*|【.*?】/g, '').trim();
   const cleanTarget = targetTitle.replace(/\(.*?\)| - .*|【.*?】/g, '').trim();
   
-  // 如果清理后相同，则是接近匹配
-  if (cleanSong === cleanTarget) {
-    return true;
-  }
+  if (cleanSong === cleanTarget) return true;
   
-  // 如果是日文/中文歌曲，检查是否包含核心部分
   const hasJapaneseOrChinese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(targetTitle);
   if (hasJapaneseOrChinese) {
-    const corePart = extractCorePart(targetTitle);
-    if (songTitle.includes(corePart)) {
-      return true;
-    }
+    const corePart = targetTitle.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+/)?.[0] || targetTitle;
+    if (songTitle.includes(corePart)) return true;
   }
   
   return false;
 }
 
-// 提取核心部分（日文/中文）
-function extractCorePart(text) {
-  const japaneseOrChineseMatch = text.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+/);
-  return japaneseOrChineseMatch ? japaneseOrChineseMatch[0] : text.split(/\s+/)[0];
-}
-
-// 获取歌曲名称
+// 工具函数
 function getSongName(song) {
   return song.song || song.name || song.songname || song.title || song.songName;
 }
 
-// 提取歌手信息
 function extractArtists(song) {
   if (!song.singer) return '';
   
@@ -412,14 +343,12 @@ function extractArtists(song) {
   }
 }
 
-// 提取专辑信息
 function extractAlbumName(song) {
   if (!song.album) return '';
   if (typeof song.album === 'object') return song.album.name || song.album.title || '';
   return String(song.album);
 }
 
-// 计算时长
 function calculateDuration(interval) {
   if (!interval) return 0;
   
@@ -440,7 +369,6 @@ function calculateDuration(interval) {
   return 0;
 }
 
-// 获取歌词（只保留 LRC 和翻译歌词，移除非歌词内容但保留[ti]和[ar]标签）
 async function getLyrics(songId) {
   try {
     const lyricUrl = `https://api.vkeys.cn/v2/music/tencent/lyric?id=${songId}`;
@@ -452,13 +380,11 @@ async function getLyrics(songId) {
     let translatedLyrics = '';
     
     if (data?.code === 200 && data.data) {
-      // 获取原始 LRC 歌词，并移除非歌词内容但保留[ti]和[ar]标签
       if (data.data.lrc) {
         syncedLyrics = removeNonLyricContent(data.data.lrc);
         plainLyrics = extractPlainLyrics(syncedLyrics);
       }
       
-      // 获取原始翻译歌词，并移除非歌词内容但保留[ti]和[ar]标签
       if (data.data.trans) {
         translatedLyrics = removeNonLyricContent(data.data.trans);
         console.log('成功获取翻译歌词');
@@ -471,15 +397,10 @@ async function getLyrics(songId) {
     
   } catch (error) {
     console.error('获取歌词失败:', error);
-    return { 
-      syncedLyrics: '', 
-      plainLyrics: '', 
-      translatedLyrics: ''
-    };
+    return { syncedLyrics: '', plainLyrics: '', translatedLyrics: '' };
   }
 }
 
-// 移除非歌词内容但保留[ti]和[ar]标签，并移除只有时间轴的空行、"//"行和版权声明行
 function removeNonLyricContent(lyricContent) {
   if (!lyricContent) return '';
   
@@ -488,60 +409,51 @@ function removeNonLyricContent(lyricContent) {
     .filter(line => {
       const trimmedLine = line.trim();
       
-      // 移除空行
-      if (trimmedLine === '') return false;
+      // 过滤空行和注释行
+      if (trimmedLine === '' || trimmedLine === '//') return false;
       
-      // 移除只包含"//"的行
-      if (trimmedLine === '//') return false;
+      // 过滤特定类型的行
+      const patternsToRemove = [
+        /^\[\d+:\d+(\.\d+)?\]\s*\/\/\s*$/, // [00:00.00]//
+        /^\[\d+:\d+(\.\d+)?\]\s*(TME|QQ音乐)享有本翻译作品的著作权\s*$/, // 版权声明
+        /^\[\d+:\d+(\.\d+)?\]\s*以下歌词翻译由文曲大模型提供\s*$/, // 文曲大模型说明
+        /^\[(al|by|offset|t_time|kana|lang|total):.*\]$/, // 其他元数据标签
+        /^\[\d+:\d+(\.\d+)?\]\s*$/, // 只有时间轴的空行
+      ];
       
-      // 移除包含时间轴后面只有"//"的行（如 [00:00.00]//）
-      if (/^\[\d+:\d+(\.\d+)?\]\s*\/\/\s*$/.test(trimmedLine)) {
+      if (patternsToRemove.some(pattern => pattern.test(trimmedLine))) {
         return false;
       }
       
-      // 移除版权声明行（如 [00:00.00]TME享有本翻译作品的著作权）
-      if (/^\[\d+:\d+(\.\d+)?\]\s*(TME|QQ音乐)享有本翻译作品的著作权\s*$/.test(trimmedLine)) {
-        return false;
-      }
-      
-      // 保留[ti]和[ar]标签
-      if (/^\[(ti|ar):.*\]$/.test(trimmedLine)) {
-        return true;
-      }
-      
-      // 移除其他歌曲信息标签行（如 [al:...], [by:...], [offset:...] 等）
-      if (/^\[(al|by|offset|t_time|kana|lang|total):.*\]$/.test(trimmedLine)) {
-        return false;
-      }
-      
-      // 检查是否是只有时间轴的空行（如 [00:48.44]）
-      if (/^\[\d+:\d+(\.\d+)?\]$/.test(trimmedLine)) {
-        return false;
-      }
-      
-      // 检查是否是只有时间轴和空内容的行（如 [00:48.44]  后面可能有空格）
-      if (/^\[\d+:\d+(\.\d+)?\]\s*$/.test(trimmedLine)) {
-        return false;
-      }
-      
-      // 保留时间轴和歌词行（如 [00:00.00] 歌词内容）
-      return true;
+      // 保留[ti]和[ar]标签以及实际的歌词行
+      return /^\[(ti|ar):.*\]$/.test(trimmedLine) || 
+             (/^\[\d+:\d+(\.\d+)?\]/.test(trimmedLine) && trimmedLine.length > 10) ||
+             (!/^\[.*\]$/.test(trimmedLine));
     })
     .join('\n');
 }
 
-// 从LRC歌词中提取纯文本
 function extractPlainLyrics(lyricContent) {
   if (!lyricContent) return '';
   
   return lyricContent
     .split('\n')
-    .map(line => line
-      .replace(/\[\d+:\d+\.\d+\]/g, '')
-      .replace(/\[\d+:\d+\]/g, '')
-      .replace(/\[.*?\]/g, '')
-      .trim()
-    )
+    .map(line => line.replace(/\[\d+:\d+\.\d+\]|\[\d+:\d+\]|\[.*?\]/g, '').trim())
     .filter(line => line)
     .join('\n');
+}
+
+function buildResponse(song, lyrics, finalTrackName) {
+  return {
+    id: song.id,
+    name: getSongName(song) || finalTrackName,
+    trackName: getSongName(song) || finalTrackName,
+    artistName: extractArtists(song),
+    albumName: extractAlbumName(song),
+    duration: calculateDuration(song.interval),
+    instrumental: !lyrics.syncedLyrics || lyrics.syncedLyrics.trim() === '',
+    plainLyrics: lyrics.plainLyrics,
+    syncedLyrics: lyrics.syncedLyrics,
+    translatedLyrics: lyrics.translatedLyrics
+  };
 }
